@@ -1,0 +1,15 @@
+database: geo_sum
+schema: geo_sum_update
+
+CREATE TABLE geo_sum_update.geo_summary (
+	uid bigserial primary key,
+	node_id bigint not null,
+	device_id bigint not null,
+	first_position point not null,
+	last_position point not null,
+	address jsonb not null,
+	speed smallint not null,
+	last_position_time timestamp(6) not null,
+	check_time timestamp(6) not null default now(),
+	timezone numeric(4, 2) not null
+);
