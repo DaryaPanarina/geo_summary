@@ -13,10 +13,14 @@ class Connection(ABC):
         config.read("config.ini")
         self._host = config[self.dbms]["host"]
         self._port = config[self.dbms]["port"]
-        self._user = config[self.dbms]["user"]
-        self._password = config[self.dbms]["password"]
-        self._database = config[self.dbms]["database"]
-        self._table = config[self.dbms]["table"]
+        if config.has_option(self.dbms, "user"):
+            self._user = config[self.dbms]["user"]
+        if config.has_option(self.dbms, "password"):
+            self._password = config[self.dbms]["password"]
+        if config.has_option(self.dbms, "database"):
+            self._database = config[self.dbms]["database"]
+        if config.has_option(self.dbms, "table"):
+            self._table = config[self.dbms]["table"]
         self._connection = None
         self.selected_data = None
 
@@ -74,7 +78,6 @@ class ConnectionMysql(Connection):
             self._connection.close()
 
 
-
 class ConnectionOracle(Connection):
     def __init__(self):
         self.dbms = "Oracle"
@@ -91,7 +94,7 @@ class ConnectionOracle(Connection):
                 self._port,
                 service_name=self._database
             )
-            self.__connection = cx_Oracle.connect(
+            self._connection = cx_Oracle.connect(
                 user=self._user,
                 password=self._password,
                 dsn=dsn_tns
@@ -106,7 +109,6 @@ class ConnectionOracle(Connection):
         if not self.is_open():
             return -11
         try:
-            print(query)
             cursor = self._connection.cursor()
             cursor.execute(query)
             self.selected_data = list(cursor.fetchall())
@@ -124,7 +126,6 @@ class ConnectionOracle(Connection):
             return self._connection.ping() is None
         except Exception:
             return False
-
 
 
 class ConnectionPostgresql(Connection):
@@ -165,12 +166,57 @@ class ConnectionPostgresql(Connection):
             return -12
 
     def insert_data(self, values):
-        query = f"INSERT INTO {self._table} VALUES(DEFAULT, %s, %s, POINT(%s, %s), %s, %s, TIMESTAMP %s, DEFAULT, %s)"
+        query = f"INSERT INTO {self._table} VALUES(DEFAULT, %s, %s, ST_SetSRID(ST_MakePoint(%s, %s),4326), %s, %s, " \
+                f"TIMESTAMP %s, DEFAULT, %s)"
+        print(query)
         if (self._connection is None) or self._connection.closed:
             return -11
         try:
             cursor = self._connection.cursor()
             cursor.execute(query, values)
+        except Exception as e:
+            print("The error occurred: ", e)
+            return -12
+
+    def close_connection(self):
+        if (self._connection is not None) and (not self._connection.closed):
+            self._connection.close()
+
+
+class ConnectionPostgis(Connection):
+    def __init__(self):
+        self.dbms = "PostGIS"
+        super().__init__()
+
+    def __del__(self):
+        if (self._connection is not None) and (not self._connection.closed):
+            self._connection.close()
+
+    def create_connection(self):
+        try:
+            self._connection = psycopg2.connect(
+                host=self._host,
+                port=self._port,
+                user=self._user,
+                password=self._password,
+                database=self._database
+            )
+            return 0
+        except Exception as e:
+            print("The error occurred: ", e)
+            return -10
+
+    def select_data(self):
+        query = "SELECT pprint_addy(r.addy[1]) As st1, pprint_addy(r.addy[2]) As st2, pprint_addy(r.addy[3]) As st3, " \
+                "array_to_string(r.street, ',') As cross_streets " \
+                "FROM reverse_geocode(ST_GeomFromText('POINT(-71.093902 42.359446)',4269),true) As r;"
+        if (self._connection is None) or self._connection.closed:
+            return -11
+        try:
+            cursor = self._connection.cursor()
+            cursor.execute(query)
+            self.selected_data = list(cursor.fetchall())
+            return 0
         except Exception as e:
             print("The error occurred: ", e)
             return -12

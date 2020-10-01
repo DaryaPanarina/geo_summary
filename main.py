@@ -1,4 +1,4 @@
-import argparse
+import sys
 import Conntection as con
 
 def insert_first_dev_locations():
@@ -18,6 +18,17 @@ def insert_first_dev_locations():
                 print("accuracy = ", row[8])
                 print("is_move = ", row[9], "\n")
         con_oracle.close_connection()
+    con_gis = con.ConnectionPostgis()
+    error = con_gis.create_connection()
+    print(error)
+    if not error:
+        if not con_gis.select_data():
+            print("PostGIS. Total number of rows is: ", len(con_gis.selected_data), "\n")
+            for row in con_gis.selected_data:
+                print("st1 = ", row[0], )
+                print("st2 = ", row[1])
+                print("st3  = ", row[2])
+                print("cross_streets = ", row[3])
 
 def insert_last_dev_locations():
     con_mysql = con.ConnectionMysql()
@@ -53,13 +64,8 @@ def insert_last_dev_locations():
                     print("timezone = ", row[8], "\n")
         con_psql.close_connection()
 
-
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--first')
-    args = parser.parse_args()
-
-    if args.first:
+    if '--first' in sys.argv:
         insert_first_dev_locations()
     else:
         insert_last_dev_locations()
