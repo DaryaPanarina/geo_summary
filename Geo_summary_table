@@ -4,10 +4,10 @@ schema: geo_sum_update
 CREATE TABLE geo_sum_update.geo_summary (
 	uid bigserial PRIMARY KEY,
 	node_id bigint NOT NULL,
-	device_id bigint not null,
+	device_id bigint NOT NULL,
 	last_location geometry(point, 4326) NOT NULL,
 	address jsonb NOT NULL,
-	speed smallint NOT NULL CHECK(speed > 0),
+	speed smallint NOT NULL CHECK(speed >= 0),
 	last_location_time timestamp(6) NOT NULL,
 	check_time timestamp(6) NOT NULL DEFAULT now(),
 	timezone numeric(4, 2) NOT NULL
