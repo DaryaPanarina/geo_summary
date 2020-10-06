@@ -67,7 +67,7 @@ class ConnectionMysql(Connection):
             return -10
 
     def select_data(self):
-        query = f"SELECT * FROM {self._table} LIMIT 10;"
+        query = f"SELECT device_id FROM {self._table} LIMIT 10;"
         try:
             cursor = self._connection.cursor()
             cursor.execute(query)
@@ -108,8 +108,15 @@ class ConnectionOracle(Connection):
             print("The error occurred: ", e)
             return -10
 
-    def select_data(self):
-        query = f"SELECT * FROM {self._table} WHERE ROWNUM < 10"
+    def select_data(self, node_data):
+        if node_data is None:
+            query = f"SELECT DISTINCT nodes_2.node_id, nodes_2.device, nodes_2.lng, nodes_2.lat, nodes_2.speed, " \
+                    f"nodes_2.time FROM nodes_2 INNER JOIN (SELECT device, min(time) time FROM nodes_2 " \
+                    f"GROUP BY device ORDER BY device OFFSET 0 ROWS FETCH NEXT 10 ROWS ONLY) t " \
+                    f"ON nodes_2.device=t.device AND nodes_2.time=t.time"
+        else:
+            query = f"SELECT node_id FROM {self._table} WHERE device={node_data[0]} AND lng={node_data[1]} " \
+                    f"AND lat=={node_data[2]} AND speed=={node_data[3]} AND time={node_data[4]}"
         try:
             cursor = self._connection.cursor()
             cursor.execute(query)
@@ -154,8 +161,8 @@ class ConnectionPostgresql(Connection):
             print("The error occurred: ", e)
             return -10
 
-    def select_data(self):
-        query = f"SELECT * FROM {self._table} LIMIT 10;"
+    def select_data(self, device_id):
+        query = f"SELECT max(last_location_time) FROM {self._table} WHERE device_id={device_id};"
         try:
             cursor = self._connection.cursor()
             cursor.execute(query)
@@ -204,7 +211,7 @@ class ConnectionPostgis(Connection):
             print("The error occurred: ", e)
             return -10
 
-    def select_data(self, lat, lng):
+    def select_data(self, lng, lat):
         query = f"SELECT name, street, housenumber, city, postcode FROM osm_buldings " \
                 f"WHERE ST_DWithin(Geography(ST_Transform(ST_Centroid(geometry), 4326)), " \
                 f"Geograohy(ST_SetSRID(ST_Point({lng}, {lat}), 4326)), 100) and name <>'' LIMIT 1;"
@@ -253,9 +260,9 @@ class ConnectionRedis(Connection):
             gps = gps_data_pb2.GPS()
             gps.ParseFromString(gps_str)
 
-            lat = gps.lat_deg + float(f"0.{gps.lat_flt}")
             lng = gps.lon_deg + float(f"0.{gps.lon_flt}")
-            self.selected_data = [device_id, lat, lng, gps.speed, gps.ts]
+            lat = gps.lat_deg + float(f"0.{gps.lat_flt}")
+            self.selected_data = [device_id, lng, lat, gps.speed, gps.ts]
             return 0
         except Exception as e:
             print("The error occurred: ", e)
@@ -288,8 +295,8 @@ class ConnectionTimeZoneServer(Connection):
     def create_connection(self):
         self._connection = requests.Session()
 
-    def select_data(self, lat, lng, ts_utc):
-        data = {"lat": lat, "lon": lng, "t": ts_utc}
+    def select_data(self, lng, lat, ts_utc):
+        data = {"lon": lng, "lat": lat, "t": ts_utc}
         try:
             response = self._connection.get(self._url, data=data)
             json_data = response.json()
