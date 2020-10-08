@@ -1,6 +1,5 @@
 import sys
 import logging
-from datetime import date
 
 import Conntection as con
 
@@ -90,7 +89,7 @@ def insert_last_dev_locations(logger):
         if con_psql.select_data(device[0]):
             errors_cnt += 1
             continue
-        if con_redis.selected_data[0] == con_psql.selected_data[0]:
+        if con_redis.selected_data[0] == con_psql.selected_data:
             continue
 
         # Define address and timezone for each device
@@ -105,9 +104,13 @@ def insert_last_dev_locations(logger):
         if con_oracle.select_data(con_redis.selected_data):
             errors_cnt += 1
             continue
-        if con_psql.insert_data((con_oracle.selected_data[0][0], device[0], con_redis.selected_data[1],
+        if len(con_oracle.selected_data) == 0:
+            logger.error(f"Device: {device[0]}. Oracle: no rows selected.")
+            errors_cnt += 1
+            continue
+        if con_psql.insert_data((con_oracle.selected_data[0], device[0], con_redis.selected_data[1],
                                  con_redis.selected_data[2], con_postgis.selected_data, con_redis.selected_data[3],
-                                 date.fromtimestamp(con_redis.selected_data[4]), con_tz.selected_data)):
+                                 con_redis.selected_data[4], con_tz.selected_data)):
             errors_cnt += 1
             continue
         inserted_rows_cnt += 1
@@ -135,16 +138,3 @@ if __name__ == '__main__':
         ans_str = f"Inserted {ans[0]} rows. {ans[1]} errors occurred."
         logger.info(ans_str)
         print(ans_str)
-
-
-    # con_redis = con.ConnectionRedis()
-    # if not con_redis.create_connection():
-    #     if not con_redis.select_data(2):
-    #         print("Redis. Result: ", con_redis.selected_data)
-    #     con_redis.close_connection()
-    #
-    # con_tz = con.ConnectionTimeZoneServer()
-    # if not con_tz.create_connection():
-    #     if not con_tz.select_data(con_redis.selected_data[1], con_redis.selected_data[2], con_redis.selected_data[4]):
-    #         print("TimeZoneServer. Result: ", con_tz.selected_data)
-    #         con_tz.close_connection()

@@ -111,17 +111,22 @@ class ConnectionOracle(Connection):
 
     def select_data(self, node_data):
         if node_data is None:
-            query = f"SELECT DISTINCT nodes_2.node_id, nodes_2.device, nodes_2.lng, nodes_2.lat, nodes_2.speed, " \
-                    f"nodes_2.time FROM nodes_2 INNER JOIN (SELECT device, min(time) time FROM nodes_2 " \
-                    f"GROUP BY device ORDER BY device OFFSET 0 ROWS FETCH NEXT 10 ROWS ONLY) t " \
-                    f"ON nodes_2.device=t.device AND nodes_2.time=t.time"
+            query = f"SELECT a.node_id, a.device, a.lng, a.lat, a.speed, a.time FROM {self._table} a " \
+                    f"INNER JOIN (SELECT device, min(time) time FROM {self._table} " \
+                    f"GROUP BY device ORDER BY device OFFSET 0 ROWS FETCH NEXT 10 ROWS ONLY) b " \
+                    f"ON a.device=b.device AND a.time=b.time"
         else:
             query = f"SELECT node_id FROM {self._table} WHERE device={node_data[0]} AND lng={node_data[1]} " \
-                    f"AND lat={node_data[2]} AND ROWNUM < 2 AND speed={node_data[3]} AND time={node_data[4]}"
+                    f"AND lat={node_data[2]} AND speed={node_data[3]}" \
+                    f"AND time=(to_timestamp('1970/01/01 00:00:00', 'YYYY/MM/DD HH24:MI:SS') " \
+                    f"+ numtodsinterval({node_data[4]}, 'SECOND'))"
         try:
             cursor = self._connection.cursor()
             cursor.execute(query)
-            self.selected_data = list(cursor.fetchall())
+            if node_data is None:
+                self.selected_data = list(cursor.fetchall())
+            else:
+                self.selected_data = cursor.fetchall()
             return 0
         except Exception as e:
             if node_data is None:
@@ -171,7 +176,7 @@ class ConnectionPostgresql(Connection):
         try:
             cursor = self._connection.cursor()
             cursor.execute(query)
-            self.selected_data = cursor.fetchall()
+            self.selected_data = cursor.fetchall()[0]
             return 0
         except Exception as e:
             self._logger.error(f"Device: {device_id}. Failed to select data from {self.dbms}. The error occurred: {e}")
@@ -179,7 +184,7 @@ class ConnectionPostgresql(Connection):
 
     def insert_data(self, values):
         query = f"INSERT INTO {self._table} VALUES(DEFAULT, %s, %s, ST_SetSRID(ST_MakePoint(%s, %s),4326), %s, %s, " \
-                f"%s, DEFAULT, %s)"
+                f"to_timestamp(%s), DEFAULT, %s)"
         try:
             cursor = self._connection.cursor()
             cursor.execute(query, values)
@@ -217,9 +222,9 @@ class ConnectionPostgis(Connection):
             return -10
 
     def select_data(self, lng, lat):
-        query = f"SELECT name, street, housenumber, city, postcode FROM osm_buldings " \
-                f"WHERE ST_DWithin(Geography(ST_Transform(ST_Centroid(geometry), 4326)), " \
-                f"Geograohy(ST_SetSRID(ST_Point({lng}, {lat}), 4326)), 100) and name <>'' LIMIT 1;"
+        query = f"SELECT name, street, housenumber, city, postcode FROM osm_buildings" \
+                f"WHERE ST_DWithin(Geography(ST_Transform(ST_Centroid(geometry), 4326))," \
+                f"Geography(ST_SetSRID(ST_Point({lng}, {lat}), 4326)), 100) and name <> '' LIMIT 1;"
         try:
             cursor = self._connection.cursor()
             cursor.execute(query)
