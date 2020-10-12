@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 import configparser
 import base64
+import json
 
 import mysql.connector
 import cx_Oracle
@@ -54,6 +55,7 @@ class ConnectionMysql(Connection):
             self._connection.close()
 
     def create_connection(self):
+        self.close_connection()
         try:
             self._connection = mysql.connector.connect(
                 host=self._host,
@@ -76,11 +78,13 @@ class ConnectionMysql(Connection):
             return 0
         except Exception as e:
             self._logger.error(f"Failed to select data from {self.dbms}. The error occurred: {e}")
+            self.selected_data = None
             return -11
 
     def close_connection(self):
         if (self._connection is not None) and self._connection.is_connected():
             self._connection.close()
+        self.selected_data = None
 
 
 class ConnectionOracle(Connection):
@@ -93,6 +97,7 @@ class ConnectionOracle(Connection):
             self._connection.close()
 
     def create_connection(self):
+        self.close_connection()
         try:
             dsn_tns = cx_Oracle.makedsn(
                 self._host,
@@ -133,12 +138,14 @@ class ConnectionOracle(Connection):
                 self._logger.error(f"Failed to select data from {self.dbms}. The error occurred: {e}")
             else:
                 self._logger.error(f"Device: {node_data[0]}. Failed to select data from {self.dbms}. "
-                                    f"The error occurred: {e}")
+                                   f"The error occurred: {e}")
+            self.selected_data = None
             return -11
 
     def close_connection(self):
         if self.is_open():
             self._connection.close()
+        self.selected_data = None
 
     def is_open(self):
         try:
@@ -157,6 +164,7 @@ class ConnectionPostgresql(Connection):
             self._connection.close()
 
     def create_connection(self):
+        self.close_connection()
         try:
             self._connection = psycopg2.connect(
                 host=self._host,
@@ -191,11 +199,13 @@ class ConnectionPostgresql(Connection):
         except Exception as e:
             self._logger.error(f"Device: {values[1]}. Failed to insert new row into geo_summary. "
                                 f"The error occurred: {e}")
+            self.selected_data = None
             return -11
 
     def close_connection(self):
         if (self._connection is not None) and (not self._connection.closed):
             self._connection.close()
+        self.selected_data = None
 
 
 class ConnectionPostgis(Connection):
@@ -208,6 +218,7 @@ class ConnectionPostgis(Connection):
             self._connection.close()
 
     def create_connection(self):
+        self.close_connection()
         try:
             self._connection = psycopg2.connect(
                 host=self._host,
@@ -222,21 +233,41 @@ class ConnectionPostgis(Connection):
             return -10
 
     def select_data(self, lng, lat):
-        query = f"SELECT name, street, housenumber, city, postcode FROM osm_buildings" \
-                f"WHERE ST_DWithin(Geography(ST_Transform(ST_Centroid(geometry), 4326))," \
-                f"Geography(ST_SetSRID(ST_Point({lng}, {lat}), 4326)), 100) and name <> '' LIMIT 1;"
-        try:
-            cursor = self._connection.cursor()
-            cursor.execute(query)
-            self.selected_data = list(cursor.fetchall())
+        query = f"SELECT name, street, housenumber, city, postcode FROM osm_buildings " \
+                f"WHERE ST_DWithin(Geography(ST_Transform(ST_Centroid(geometry), 4326)), " \
+                f"Geography(ST_SetSRID(ST_Point({lng}, {lat}), 4326)), 100) AND street<>'' LIMIT 1;"
+        if not self.execute_query(query):
             return 0
-        except Exception as e:
-            self._logger.error(f"Failed to define device's address. The error occurred: {e}")
+        query = f"SELECT name FROM osm_water_polygon " \
+                f"WHERE ST_Intersects(Geography(ST_Transform(ST_Centroid(geometry), 4326)), " \
+                f"Geography(ST_SetSRID(ST_Point({lng}, {lat}), 4326))) IS TRUE AND name<>'' LIMIT 1;"
+        if not self.execute_query(query):
+            return 0
+        query = f"SELECT highway, name FROM osm_highway_linestring " \
+                f"WHERE ST_Intersects(Geography(ST_Transform(ST_Centroid(geometry), 4326)), " \
+                f"Geography(ST_SetSRID(ST_Point({lng}, {lat}), 4326))) IS TRUE AND name<>'' LIMIT 1;"
+        if not self.execute_query(query):
+            return 0
+        else:
+            self._logger.error(f"Failed to define device's address.")
+            self.selected_data = None
             return -11
 
     def close_connection(self):
         if (self._connection is not None) and (not self._connection.closed):
             self._connection.close()
+        self.selected_data = None
+
+    def execute_query(self, query):
+        try:
+            cursor = self._connection.cursor()
+            cursor.execute(query)
+            cursor_data = cursor.fetchall()
+            r = [dict((cursor.description[i][0], value) for i, value in enumerate(row)) for row in cursor_data]
+            self.selected_data = json.dumps(r[0])
+            return 0
+        except Exception as e:
+            return -11
 
 
 class ConnectionRedis(Connection):
@@ -249,6 +280,7 @@ class ConnectionRedis(Connection):
             self._connection.close()
 
     def create_connection(self):
+        self.close_connection()
         try:
             self._connection = redis.Redis(
                 host=self._host,
@@ -276,11 +308,13 @@ class ConnectionRedis(Connection):
             return 0
         except Exception as e:
             self._logger.error(f"Device: {device_id}. Failed to select data from {self.dbms}. The error occurred: {e}")
+            self.selected_data = None
             return -11
 
     def close_connection(self):
         if self.is_open():
             self._connection.close()
+        self.selected_data = None
 
     def is_open(self):
         try:
@@ -303,6 +337,7 @@ class ConnectionTimeZoneServer(Connection):
             pass
 
     def create_connection(self):
+        self.close_connection()
         self._connection = requests.Session()
 
     def select_data(self, lng, lat, ts_utc):
@@ -310,14 +345,16 @@ class ConnectionTimeZoneServer(Connection):
         try:
             response = self._connection.get(self._url, data=data)
             json_data = response.json()
-            self.selected_data = int(json_data['shift'])
+            self.selected_data = int(json_data['shift']) / 3600
             return 0
         except Exception as e:
             self._logger.error(f"Failed to define timezone. The error occurred: {e}")
+            self.selected_data = None
             return -11
 
     def close_connection(self):
+        self.selected_data = None
         try:
             self._connection.close()
         except Exception:
-            pass
+            return
