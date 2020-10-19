@@ -198,7 +198,7 @@ class ConnectionPostgresql(Connection):
             cursor.execute(query, values)
         except Exception as e:
             self._logger.error(f"Device: {values[1]}. Failed to insert new row into geo_summary. "
-                                f"The error occurred: {e}")
+                               f"The error occurred: {e}")
             self.selected_data = None
             return -11
 
@@ -233,18 +233,37 @@ class ConnectionPostgis(Connection):
             return -10
 
     def select_data(self, lng, lat):
-        query = f"SELECT name, street, housenumber, city, postcode FROM osm_buildings " \
+        # Buildings
+        query = f"SELECT postcode, city, street, housenumber, name FROM osm_buildings " \
                 f"WHERE ST_DWithin(Geography(ST_Transform(ST_Centroid(geometry), 4326)), " \
                 f"Geography(ST_SetSRID(ST_Point({lng}, {lat}), 4326)), 100) AND street<>'' LIMIT 1;"
         if not self.execute_query(query):
             return 0
-        query = f"SELECT name FROM osm_water_polygon " \
-                f"WHERE ST_Intersects(Geography(ST_Transform(ST_Centroid(geometry), 4326)), " \
+
+        # Roads
+        query = f"SELECT network, ref, highway, name FROM osm_highway_linestring " \
+                f"WHERE ST_Intersects(Geography(ST_Transform(geometry, 4326)), " \
                 f"Geography(ST_SetSRID(ST_Point({lng}, {lat}), 4326))) IS TRUE AND name<>'' LIMIT 1;"
         if not self.execute_query(query):
             return 0
-        query = f"SELECT highway, name FROM osm_highway_linestring " \
-                f"WHERE ST_Intersects(Geography(ST_Transform(ST_Centroid(geometry), 4326)), " \
+
+        # Water
+        query = f"SELECT osm_water_polygon.natural, name FROM osm_water_polygon " \
+                f"WHERE ST_Intersects(Geography(ST_Transform(geometry, 4326)), " \
+                f"Geography(ST_SetSRID(ST_Point({lng}, {lat}), 4326))) IS TRUE AND name<>'' LIMIT 1;"
+        if not self.execute_query(query):
+            return 0
+
+        # Cities
+        query = f"SELECT postcode, country, region, district, type, name FROM osm_cities " \
+                f"WHERE ST_Intersects(Geography(ST_Transform(geometry, 4326)), " \
+                f"Geography(ST_SetSRID(ST_Point({lng}, {lat}), 4326))) IS TRUE AND name<>'' LIMIT 1;"
+        if not self.execute_query(query):
+            return 0
+
+        # Boundaries
+        query = f"SELECT type, name FROM osm_boundaries " \
+                f"WHERE ST_Intersects(Geography(ST_Transform(geometry, 4326)), " \
                 f"Geography(ST_SetSRID(ST_Point({lng}, {lat}), 4326))) IS TRUE AND name<>'' LIMIT 1;"
         if not self.execute_query(query):
             return 0
