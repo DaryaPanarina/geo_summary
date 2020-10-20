@@ -5,7 +5,7 @@ import Conntection as con
 
 
 def insert_first_dev_locations(logger):
-    # Connections to databases and TimeZoneServer
+    # Connect to databases and TimeZoneServer
     con_oracle = con.ConnectionOracle(logger)
     error = con_oracle.create_connection()
     if error:
@@ -30,6 +30,7 @@ def insert_first_dev_locations(logger):
 
     # Update geo_summary
     errors_cnt = 0
+    # row = [node_id, device, lng, lat, speed, time]
     for row in con_oracle.selected_data:
         # Define address and timezone for each device
         if con_postgis.select_data(row[2], row[3]):
@@ -43,7 +44,6 @@ def insert_first_dev_locations(logger):
         if con_psql.insert_data((row[0], row[1], row[2], row[3], con_postgis.selected_data, row[4], row[5],
                                  con_tz.selected_data)):
             errors_cnt += 1
-            continue
     return len(con_oracle.selected_data) - errors_cnt, errors_cnt
 
 
@@ -75,21 +75,24 @@ def insert_last_dev_locations(logger):
         return (error,)
 
     # Select list of all devices
-    if con_mysql.select_data():
-        return (-2,)
+    error = con_mysql.select_data()
+    if error:
+        return (error,)
 
     # Define address and timezone for each device
     errors_cnt = 0
     inserted_rows_cnt = 0
+    # device = [device_id, ]
     for device in con_mysql.selected_data:
         # Check if the device's location changed
+        # con_redis.selected_data = [device_id, lng, lat, speed, time]
         if con_redis.select_data(device[0]):
             errors_cnt += 1
             continue
         if con_psql.select_data(device[0]):
             errors_cnt += 1
             continue
-        if con_redis.selected_data[0] == con_psql.selected_data:
+        if con_redis.selected_data[4] == con_psql.selected_data:
             continue
 
         # Define address and timezone for each device
@@ -108,18 +111,19 @@ def insert_last_dev_locations(logger):
             logger.error(f"Device: {device[0]}. Oracle: no rows selected.")
             errors_cnt += 1
             continue
-        if con_psql.insert_data((con_oracle.selected_data[0], device[0], con_redis.selected_data[1],
-                                 con_redis.selected_data[2], con_postgis.selected_data, con_redis.selected_data[3],
-                                 con_redis.selected_data[4], con_tz.selected_data)):
+        if not con_psql.insert_data((con_oracle.selected_data, device[0], con_redis.selected_data[1],
+                                     con_redis.selected_data[2], con_postgis.selected_data, con_redis.selected_data[3],
+                                     con_redis.selected_data[4], con_tz.selected_data)):
+            inserted_rows_cnt += 1
+        else:
             errors_cnt += 1
-            continue
-        inserted_rows_cnt += 1
     return inserted_rows_cnt, errors_cnt
 
 
 if __name__ == '__main__':
     logging.basicConfig(filename='geo_summary_error.log', filemode='w', format='[%(levelname)s]   %(message)s')
     logger = logging.getLogger("geo_summary")
+    logger.setLevel('INFO')
 
     if '--first' in sys.argv:
         logger.info("Insert first devices' locations")
@@ -130,10 +134,10 @@ if __name__ == '__main__':
 
     if ans[0] == -10:
         print("Failed to connect to database.")
-        sys.exit(ans)
+        sys.exit(ans[0])
     elif ans[0] == -11:
         print("Failed to select data from database.")
-        sys.exit(ans)
+        sys.exit(ans[0])
     else:
         ans_str = f"Inserted {ans[0]} rows. {ans[1]} errors occurred."
         logger.info(ans_str)

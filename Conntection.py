@@ -9,6 +9,7 @@ import psycopg2
 import redis
 import requests
 
+# Protobuf structure GPS
 import gps_data_pb2
 
 
@@ -51,8 +52,7 @@ class ConnectionMysql(Connection):
         super().__init__(logger)
 
     def __del__(self):
-        if (self._connection is not None) and self._connection.is_connected():
-            self._connection.close()
+        self.close_connection()
 
     def create_connection(self):
         self.close_connection()
@@ -74,7 +74,7 @@ class ConnectionMysql(Connection):
         try:
             cursor = self._connection.cursor()
             cursor.execute(query)
-            self.selected_data = list(cursor.fetchall())
+            self.selected_data = cursor.fetchall()
             return 0
         except Exception as e:
             self._logger.error(f"Failed to select data from {self.dbms}. The error occurred: {e}")
@@ -93,8 +93,7 @@ class ConnectionOracle(Connection):
         super().__init__(logger)
 
     def __del__(self):
-        if self.is_open():
-            self._connection.close()
+        self.close_connection()
 
     def create_connection(self):
         self.close_connection()
@@ -121,6 +120,7 @@ class ConnectionOracle(Connection):
                     f"GROUP BY device ORDER BY device OFFSET 0 ROWS FETCH NEXT 10 ROWS ONLY) b " \
                     f"ON a.device=b.device AND a.time=b.time"
         else:
+            # node_data = [device_id, lng, lat, speed, time]
             query = f"SELECT node_id FROM {self._table} WHERE device={node_data[0]} AND lng={node_data[1]} " \
                     f"AND lat={node_data[2]} AND speed={node_data[3]}" \
                     f"AND time=(to_timestamp('1970/01/01 00:00:00', 'YYYY/MM/DD HH24:MI:SS') " \
@@ -129,9 +129,9 @@ class ConnectionOracle(Connection):
             cursor = self._connection.cursor()
             cursor.execute(query)
             if node_data is None:
-                self.selected_data = list(cursor.fetchall())
-            else:
                 self.selected_data = cursor.fetchall()
+            else:
+                self.selected_data = cursor.fetchall()[0]
             return 0
         except Exception as e:
             if node_data is None:
@@ -143,15 +143,12 @@ class ConnectionOracle(Connection):
             return -11
 
     def close_connection(self):
-        if self.is_open():
-            self._connection.close()
         self.selected_data = None
-
-    def is_open(self):
         try:
-            return self._connection.ping() is None
+            if self._connection.ping() is None:
+                self._connection.close()
         except Exception:
-            return False
+            return
 
 
 class ConnectionPostgresql(Connection):
@@ -160,8 +157,7 @@ class ConnectionPostgresql(Connection):
         super().__init__(logger)
 
     def __del__(self):
-        if (self._connection is not None) and (not self._connection.closed):
-            self._connection.close()
+        self.close_connection()
 
     def create_connection(self):
         self.close_connection()
@@ -188,6 +184,7 @@ class ConnectionPostgresql(Connection):
             return 0
         except Exception as e:
             self._logger.error(f"Device: {device_id}. Failed to select data from {self.dbms}. The error occurred: {e}")
+            self.selected_data = None
             return -11
 
     def insert_data(self, values):
@@ -214,8 +211,7 @@ class ConnectionPostgis(Connection):
         super().__init__(logger)
 
     def __del__(self):
-        if (self._connection is not None) and (not self._connection.closed):
-            self._connection.close()
+        self.close_connection()
 
     def create_connection(self):
         self.close_connection()
@@ -282,7 +278,7 @@ class ConnectionPostgis(Connection):
             cursor = self._connection.cursor()
             cursor.execute(query)
             cursor_data = cursor.fetchall()
-            r = [dict((cursor.description[i][0], value) for i, value in enumerate(row)) for row in cursor_data]
+            r = dict((cursor.description[i][0], value) for i, value in enumerate(cursor_data[0]))
             self.selected_data = json.dumps(r[0])
             return 0
         except Exception as e:
@@ -295,8 +291,7 @@ class ConnectionRedis(Connection):
         super().__init__(logger)
 
     def __del__(self):
-        if self.is_open():
-            self._connection.close()
+        self.close_connection()
 
     def create_connection(self):
         self.close_connection()
@@ -315,6 +310,7 @@ class ConnectionRedis(Connection):
         try:
             data = self._connection.hmget(name, ["data"])
             if len(data) != 1:
+                self._logger.error(f"Device: {device_id}. Failed to select data from {self.dbms}.")
                 return -13
 
             gps_str = base64.b64decode(data[0].decode("utf-8"))
@@ -331,16 +327,12 @@ class ConnectionRedis(Connection):
             return -11
 
     def close_connection(self):
-        if self.is_open():
-            self._connection.close()
         self.selected_data = None
-
-    def is_open(self):
         try:
             self._connection.ping()
-            return True
+            self._connection.close()
         except Exception:
-            return False
+            return
 
 
 class ConnectionTimeZoneServer(Connection):
@@ -350,10 +342,7 @@ class ConnectionTimeZoneServer(Connection):
         self._url = "http://" + self._host + ':' + str(self._port) + '/tz.json'
 
     def __del__(self):
-        try:
-            self._connection.close()
-        except Exception:
-            pass
+        self.close_connection()
 
     def create_connection(self):
         self.close_connection()
