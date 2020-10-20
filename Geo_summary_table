@@ -10,5 +10,5 @@ CREATE TABLE geo_sum_update.geo_summary (
 	speed smallint NOT NULL CHECK(speed >= 0),
 	last_location_time timestamp(6) NOT NULL,
 	check_time timestamp(6) NOT NULL DEFAULT now(),
-	timezone numeric(4, 2) NOT NULL
+	timezone_shift numeric(4, 2) NOT NULL
 );
