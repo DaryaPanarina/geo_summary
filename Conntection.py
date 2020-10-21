@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from datetime import datetime
 import configparser
 import base64
 import json
@@ -70,7 +71,7 @@ class ConnectionMysql(Connection):
             return -10
 
     def select_data(self):
-        query = f"SELECT device_id FROM {self._table} LIMIT 10;"
+        query = f"SELECT device_id FROM {self._table};"
         try:
             cursor = self._connection.cursor()
             cursor.execute(query)
@@ -113,32 +114,17 @@ class ConnectionOracle(Connection):
             self._logger.error(f"Failed to connect to {self.dbms}. The error occurred: {e}")
             return -10
 
-    def select_data(self, node_data):
-        if node_data is None:
-            query = f"SELECT a.node_id, a.device, a.lng, a.lat, a.speed, a.time FROM {self._table} a " \
-                    f"INNER JOIN (SELECT device, min(time) time FROM {self._table} " \
-                    f"GROUP BY device ORDER BY device OFFSET 0 ROWS FETCH NEXT 10 ROWS ONLY) b " \
-                    f"ON a.device=b.device AND a.time=b.time"
-        else:
-            # node_data = [device_id, lng, lat, speed, time]
-            query = f"SELECT node_id FROM {self._table} WHERE device={node_data[0]} AND lng={node_data[1]} " \
-                    f"AND lat={node_data[2]} AND speed={node_data[3]}" \
-                    f"AND time=(to_timestamp('1970/01/01 00:00:00', 'YYYY/MM/DD HH24:MI:SS') " \
-                    f"+ numtodsinterval({node_data[4]}, 'SECOND'))"
+    def select_data(self):
+        query = f"SELECT DISTINCT a.device, a.lng, a.lat, a.speed, a.time FROM {self._table} a " \
+                f"INNER JOIN (SELECT device, min(time) time FROM {self._table} GROUP BY device ORDER BY device) b " \
+                f"ON a.device=b.device AND a.time=b.time"
         try:
             cursor = self._connection.cursor()
             cursor.execute(query)
-            if node_data is None:
-                self.selected_data = cursor.fetchall()
-            else:
-                self.selected_data = cursor.fetchall()[0]
+            self.selected_data = cursor.fetchall()
             return 0
         except Exception as e:
-            if node_data is None:
-                self._logger.error(f"Failed to select data from {self.dbms}. The error occurred: {e}")
-            else:
-                self._logger.error(f"Device: {node_data[0]}. Failed to select data from {self.dbms}. "
-                                   f"The error occurred: {e}")
+            self._logger.error(f"Failed to select data from {self.dbms}. The error occurred: {e}")
             self.selected_data = None
             return -11
 
@@ -176,7 +162,7 @@ class ConnectionPostgresql(Connection):
             return -10
 
     def select_data(self, device_id):
-        query = f"SELECT max(last_location_time) FROM {self._table} WHERE device_id={device_id};"
+        query = f"SELECT max(last_location_time) last_location_time FROM {self._table} WHERE device_id={device_id};"
         try:
             cursor = self._connection.cursor()
             cursor.execute(query)
@@ -188,15 +174,16 @@ class ConnectionPostgresql(Connection):
             return -11
 
     def insert_data(self, values):
-        query = f"INSERT INTO {self._table} VALUES(DEFAULT, %s, %s, ST_SetSRID(ST_MakePoint(%s, %s),4326), %s, %s, " \
-                f"to_timestamp(%s), DEFAULT, %s)"
+        # values = [device_id, lng, lat, address, speed, last_location_time, timezone_shift]
+        query = f"INSERT INTO {self._table} VALUES(DEFAULT, %s, ST_SetSRID(ST_MakePoint(%s, %s),4326), %s, %s, " \
+                f"%s, DEFAULT, %s)"
         try:
             cursor = self._connection.cursor()
             cursor.execute(query, values)
+            return 0
         except Exception as e:
-            self._logger.error(f"Device: {values[1]}. Failed to insert new row into geo_summary. "
+            self._logger.error(f"Device: {values[0]}. Failed to insert new row into geo_summary. "
                                f"The error occurred: {e}")
-            self.selected_data = None
             return -11
 
     def close_connection(self):
@@ -279,7 +266,7 @@ class ConnectionPostgis(Connection):
             cursor.execute(query)
             cursor_data = cursor.fetchall()
             r = dict((cursor.description[i][0], value) for i, value in enumerate(cursor_data[0]))
-            self.selected_data = json.dumps(r[0])
+            self.selected_data = json.dumps(r)
             return 0
         except Exception as e:
             return -11
@@ -319,7 +306,7 @@ class ConnectionRedis(Connection):
 
             lng = gps.lon_deg + float(f"0.{gps.lon_flt}")
             lat = gps.lat_deg + float(f"0.{gps.lat_flt}")
-            self.selected_data = [device_id, lng, lat, gps.speed, gps.ts]
+            self.selected_data = [device_id, lng, lat, gps.speed, datetime.fromtimestamp(gps.ts)]
             return 0
         except Exception as e:
             self._logger.error(f"Device: {device_id}. Failed to select data from {self.dbms}. The error occurred: {e}")
@@ -346,7 +333,11 @@ class ConnectionTimeZoneServer(Connection):
 
     def create_connection(self):
         self.close_connection()
-        self._connection = requests.Session()
+        try:
+            self._connection = requests.Session()
+        except Exception as e:
+            self._logger.error(f"Failed to connect to {self.dbms}. The error occurred: {e}")
+            return -10
 
     def select_data(self, lng, lat, ts_utc):
         data = {"lon": lng, "lat": lat, "t": ts_utc}
@@ -356,7 +347,8 @@ class ConnectionTimeZoneServer(Connection):
             self.selected_data = int(json_data['shift']) / 3600
             return 0
         except Exception as e:
-            self._logger.error(f"Failed to define timezone. The error occurred: {e}")
+            self._logger.error(f"Failed to define timezone. Lat: {lat}, lng: {lng}, ts_utc: {ts_utc}. "
+                               f"The error occurred: {e}")
             self.selected_data = None
             return -11
 

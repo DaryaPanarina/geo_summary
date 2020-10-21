@@ -1,5 +1,6 @@
 import sys
 import logging
+from datetime import datetime
 
 import Conntection as con
 
@@ -24,24 +25,25 @@ def insert_first_dev_locations(logger):
         return (error,)
 
     # Select data of the first position for each device
-    error = con_oracle.select_data(None)
+    error = con_oracle.select_data()
     if error:
         return (error,)
 
     # Update geo_summary
     errors_cnt = 0
-    # row = [node_id, device, lng, lat, speed, time]
+    # row = [device, lng, lat, speed, time]
     for row in con_oracle.selected_data:
         # Define address and timezone for each device
-        if con_postgis.select_data(row[2], row[3]):
+        if con_postgis.select_data(row[1], row[2]):
             errors_cnt += 1
             continue
-        if con_tz.select_data(row[2], row[3], row[5]):
+        if con_tz.select_data(row[1], row[2], datetime.timestamp(row[4])):
             errors_cnt += 1
             continue
 
         # Insert new row into geo_summary
-        if con_psql.insert_data((row[0], row[1], row[2], row[3], con_postgis.selected_data, row[4], row[5],
+        # [device_id, lng, lat, address, speed, last_location_time, timezone_shift]
+        if con_psql.insert_data((row[0], row[1], row[2], con_postgis.selected_data, row[3], row[4],
                                  con_tz.selected_data)):
             errors_cnt += 1
     return len(con_oracle.selected_data) - errors_cnt, errors_cnt
@@ -51,10 +53,6 @@ def insert_last_dev_locations(logger):
     # Connections to databases and TimeZoneServer
     con_mysql = con.ConnectionMysql(logger)
     error = con_mysql.create_connection()
-    if error:
-        return (error,)
-    con_oracle = con.ConnectionOracle(logger)
-    error = con_oracle.create_connection()
     if error:
         return (error,)
     con_redis = con.ConnectionRedis(logger)
@@ -99,20 +97,15 @@ def insert_last_dev_locations(logger):
         if con_postgis.select_data(con_redis.selected_data[1], con_redis.selected_data[2]):
             errors_cnt += 1
             continue
-        if con_tz.select_data(con_redis.selected_data[1], con_redis.selected_data[2], con_redis.selected_data[4]):
+        if con_tz.select_data(con_redis.selected_data[1], con_redis.selected_data[2],
+                              datetime.timestamp(con_redis.selected_data[4])):
             errors_cnt += 1
             continue
 
         # Insert new row into geo_summary
-        if con_oracle.select_data(con_redis.selected_data):
-            errors_cnt += 1
-            continue
-        if len(con_oracle.selected_data) == 0:
-            logger.error(f"Device: {device[0]}. Oracle: no rows selected.")
-            errors_cnt += 1
-            continue
-        if not con_psql.insert_data((con_oracle.selected_data, device[0], con_redis.selected_data[1],
-                                     con_redis.selected_data[2], con_postgis.selected_data, con_redis.selected_data[3],
+        # [device_id, lng, lat, address, speed, last_location_time, timezone_shift]
+        if not con_psql.insert_data((device[0], con_redis.selected_data[1], con_redis.selected_data[2],
+                                     con_postgis.selected_data, con_redis.selected_data[3],
                                      con_redis.selected_data[4], con_tz.selected_data)):
             inserted_rows_cnt += 1
         else:
