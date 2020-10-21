@@ -3,7 +3,6 @@ schema: geo_sum_update
 
 CREATE TABLE geo_sum_update.geo_summary (
 	uid bigserial PRIMARY KEY,
-	node_id bigint NOT NULL,
 	device_id bigint NOT NULL,
 	last_location geometry(point, 4326) NOT NULL,
 	address jsonb NOT NULL,
