@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from datetime import datetime
 import configparser
 import base64
 import json
@@ -71,7 +70,7 @@ class ConnectionMysql(Connection):
             return -10
 
     def select_data(self):
-        query = f"SELECT device_id FROM {self._table};"
+        query = f"SELECT device_id FROM {self._table} LIMIT 50;"
         try:
             cursor = self._connection.cursor()
             cursor.execute(query)
@@ -117,7 +116,7 @@ class ConnectionOracle(Connection):
     def select_data(self):
         query = f"SELECT DISTINCT a.device, a.lng, a.lat, a.speed, a.time FROM {self._table} a " \
                 f"INNER JOIN (SELECT device, min(time) time FROM {self._table} GROUP BY device ORDER BY device) b " \
-                f"ON a.device=b.device AND a.time=b.time"
+                f"ON a.device=b.device AND a.time=b.time OFFSET 0 ROWS FETCH NEXT 50 ROWS ONLY"
         try:
             cursor = self._connection.cursor()
             cursor.execute(query)
@@ -162,11 +161,12 @@ class ConnectionPostgresql(Connection):
             return -10
 
     def select_data(self, device_id):
-        query = f"SELECT max(last_location_time) last_location_time FROM {self._table} WHERE device_id={device_id};"
+        query = f"SELECT cast(extract(epoch FROM max(last_location_time)) as integer) last_location_time" \
+                f" FROM {self._table} WHERE device_id={device_id};"
         try:
             cursor = self._connection.cursor()
             cursor.execute(query)
-            self.selected_data = cursor.fetchall()[0]
+            self.selected_data = cursor.fetchall()[0][0]
             return 0
         except Exception as e:
             self._logger.error(f"Device: {device_id}. Failed to select data from {self.dbms}. The error occurred: {e}")
@@ -176,7 +176,7 @@ class ConnectionPostgresql(Connection):
     def insert_data(self, values):
         # values = [device_id, lng, lat, address, speed, last_location_time, timezone_shift]
         query = f"INSERT INTO {self._table} VALUES(DEFAULT, %s, ST_SetSRID(ST_MakePoint(%s, %s),4326), %s, %s, " \
-                f"%s, DEFAULT, %s)"
+                f"to_timestamp(%s), DEFAULT, %s)"
         try:
             cursor = self._connection.cursor()
             cursor.execute(query, values)
@@ -220,8 +220,27 @@ class ConnectionPostgis(Connection):
         query = f"SELECT postcode, city, street, housenumber, name FROM osm_buildings " \
                 f"WHERE ST_DWithin(Geography(ST_Transform(ST_Centroid(geometry), 4326)), " \
                 f"Geography(ST_SetSRID(ST_Point({lng}, {lat}), 4326)), 100) AND street<>'' LIMIT 1;"
-        if not self.execute_query(query):
+        error = self.execute_query(query)
+        if (not error) and (self.selected_data[1] != "''"):
             return 0
+        address = None
+        if (not error) and (self.selected_data[1] == "''"):
+            address = self.selected_data
+
+        # Cities
+        query = f"SELECT postcode, country, region, district, type, name FROM osm_cities " \
+                f"WHERE ST_Intersects(Geography(ST_Transform(geometry, 4326)), " \
+                f"Geography(ST_SetSRID(ST_Point({lng}, {lat}), 4326))) IS TRUE AND name<>'' LIMIT 1;"
+        error = self.execute_query(query)
+        if (not error) and not (address is None):
+            address[1] = self.selected_data[6]
+            self.selected_data = address
+            return 0
+        if error and not (address is None):
+            self.selected_data = address
+            return 0
+        if not error:
+            address = self.selected_data
 
         # Roads
         query = f"SELECT network, ref, highway, name FROM osm_highway_linestring " \
@@ -237,11 +256,8 @@ class ConnectionPostgis(Connection):
         if not self.execute_query(query):
             return 0
 
-        # Cities
-        query = f"SELECT postcode, country, region, district, type, name FROM osm_cities " \
-                f"WHERE ST_Intersects(Geography(ST_Transform(geometry, 4326)), " \
-                f"Geography(ST_SetSRID(ST_Point({lng}, {lat}), 4326))) IS TRUE AND name<>'' LIMIT 1;"
-        if not self.execute_query(query):
+        if not (address is None):
+            self.selected_data = address
             return 0
 
         # Boundaries
@@ -252,7 +268,6 @@ class ConnectionPostgis(Connection):
             return 0
         else:
             self._logger.error(f"Failed to define device's address.")
-            self.selected_data = None
             return -11
 
     def close_connection(self):
@@ -268,7 +283,8 @@ class ConnectionPostgis(Connection):
             r = dict((cursor.description[i][0], value) for i, value in enumerate(cursor_data[0]))
             self.selected_data = json.dumps(r)
             return 0
-        except Exception as e:
+        except Exception:
+            self.selected_data = None
             return -11
 
 
@@ -306,7 +322,7 @@ class ConnectionRedis(Connection):
 
             lng = gps.lon_deg + float(f"0.{gps.lon_flt}")
             lat = gps.lat_deg + float(f"0.{gps.lat_flt}")
-            self.selected_data = [device_id, lng, lat, gps.speed, datetime.fromtimestamp(gps.ts)]
+            self.selected_data = [device_id, lng, lat, gps.speed, gps.ts]
             return 0
         except Exception as e:
             self._logger.error(f"Device: {device_id}. Failed to select data from {self.dbms}. The error occurred: {e}")

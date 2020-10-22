@@ -33,17 +33,23 @@ def insert_first_dev_locations(logger):
     errors_cnt = 0
     # row = [device, lng, lat, speed, time]
     for row in con_oracle.selected_data:
+        if row[0] is None:
+            continue
+
         # Define address and timezone for each device
-        if con_postgis.select_data(row[1], row[2]):
+        if con_tz.select_data(row[1], row[2], datetime.timestamp(row[4])):
             errors_cnt += 1
             continue
-        if con_tz.select_data(row[1], row[2], datetime.timestamp(row[4])):
+        if con_postgis.select_data(row[1], row[2]):
             errors_cnt += 1
             continue
 
         # Insert new row into geo_summary
         # [device_id, lng, lat, address, speed, last_location_time, timezone_shift]
-        if con_psql.insert_data((row[0], row[1], row[2], con_postgis.selected_data, row[3], row[4],
+        speed = row[3]
+        if speed is None:
+            speed = 0
+        if con_psql.insert_data((row[0], row[1], row[2], con_postgis.selected_data, speed, datetime.timestamp(row[4]),
                                  con_tz.selected_data)):
             errors_cnt += 1
     return len(con_oracle.selected_data) - errors_cnt, errors_cnt
@@ -82,23 +88,22 @@ def insert_last_dev_locations(logger):
     inserted_rows_cnt = 0
     # device = [device_id, ]
     for device in con_mysql.selected_data:
-        # Check if the device's location changed
         # con_redis.selected_data = [device_id, lng, lat, speed, time]
         if con_redis.select_data(device[0]):
+            errors_cnt += 1
+            continue
+        if con_tz.select_data(con_redis.selected_data[1], con_redis.selected_data[2], con_redis.selected_data[4]):
             errors_cnt += 1
             continue
         if con_psql.select_data(device[0]):
             errors_cnt += 1
             continue
-        if con_redis.selected_data[4] == con_psql.selected_data:
+        # Check if the device's location changed
+        if (con_redis.selected_data[4] + con_tz.selected_data * 3600) == con_psql.selected_data:
             continue
 
         # Define address and timezone for each device
         if con_postgis.select_data(con_redis.selected_data[1], con_redis.selected_data[2]):
-            errors_cnt += 1
-            continue
-        if con_tz.select_data(con_redis.selected_data[1], con_redis.selected_data[2],
-                              datetime.timestamp(con_redis.selected_data[4])):
             errors_cnt += 1
             continue
 
