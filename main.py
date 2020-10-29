@@ -1,6 +1,7 @@
 import sys
 import logging
 from datetime import datetime
+import time
 
 import Conntection as con
 
@@ -119,6 +120,9 @@ def insert_last_dev_locations(logger):
 
 
 if __name__ == '__main__':
+    # starting time
+    start = time.time()
+
     logging.basicConfig(filename='geo_summary_error.log', filemode='w', format='[%(levelname)s]   %(message)s')
     logger = logging.getLogger("geo_summary")
     logger.setLevel('INFO')
@@ -140,3 +144,9 @@ if __name__ == '__main__':
         ans_str = f"Inserted {ans[0]} rows. {ans[1]} errors occurred."
         logger.info(ans_str)
         print(ans_str)
+
+    # end time
+    end = time.time()
+
+    # total time taken
+    print(f"Runtime of the program is {end - start}")

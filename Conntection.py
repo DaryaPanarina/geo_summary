@@ -70,7 +70,7 @@ class ConnectionMysql(Connection):
             return -10
 
     def select_data(self):
-        query = f"SELECT device_id FROM {self._table} LIMIT 50;"
+        query = f"SELECT device_id FROM {self._table};"
         try:
             cursor = self._connection.cursor()
             cursor.execute(query)
@@ -220,54 +220,62 @@ class ConnectionPostgis(Connection):
         query = f"SELECT postcode, city, street, housenumber, name FROM osm_buildings " \
                 f"WHERE ST_DWithin(Geography(ST_Transform(ST_Centroid(geometry), 4326)), " \
                 f"Geography(ST_SetSRID(ST_Point({lng}, {lat}), 4326)), 100) AND street<>'' LIMIT 1;"
+
         error = self.execute_query(query)
-        if (not error) and (self.selected_data[1] != "''"):
+        if (not error) and (self.selected_data['city']):
+            self.selected_data = json.dumps(self.selected_data)
             return 0
         address = None
-        if (not error) and (self.selected_data[1] == "''"):
+        if (not error) and (not self.selected_data['city']):
             address = self.selected_data
 
         # Cities
         query = f"SELECT postcode, country, region, district, type, name FROM osm_cities " \
-                f"WHERE ST_Intersects(Geography(ST_Transform(geometry, 4326)), " \
-                f"Geography(ST_SetSRID(ST_Point({lng}, {lat}), 4326))) IS TRUE AND name<>'' LIMIT 1;"
+                f"WHERE ST_Within(ST_Transform(ST_GeomFromEWKT('SRID=4326;POINT({lng} {lat})'), 3857), geometry) " \
+                f"AND name<>'' LIMIT 1;"
+
         error = self.execute_query(query)
         if (not error) and not (address is None):
-            address[1] = self.selected_data[6]
-            self.selected_data = address
+            address['city'] = self.selected_data['name']
+            if not address['postcode']:
+                address['postcode'] = self.selected_data['postcode']
+            self.selected_data = json.dumps(address)
             return 0
         if error and not (address is None):
-            self.selected_data = address
+            self.selected_data = json.dumps(address)
             return 0
         if not error:
             address = self.selected_data
 
         # Roads
         query = f"SELECT network, ref, highway, name FROM osm_highway_linestring " \
-                f"WHERE ST_Intersects(Geography(ST_Transform(geometry, 4326)), " \
-                f"Geography(ST_SetSRID(ST_Point({lng}, {lat}), 4326))) IS TRUE AND name<>'' LIMIT 1;"
+                f"WHERE ST_DWithin(Geography(ST_Transform(geometry, 4326)), " \
+                f"Geography(ST_SetSRID(ST_Point({lng}, {lat}), 4326)), 100) AND name<>'' LIMIT 1;"
         if not self.execute_query(query):
+            self.selected_data = json.dumps(self.selected_data)
             return 0
 
         # Water
         query = f"SELECT osm_water_polygon.natural, name FROM osm_water_polygon " \
-                f"WHERE ST_Intersects(Geography(ST_Transform(geometry, 4326)), " \
-                f"Geography(ST_SetSRID(ST_Point({lng}, {lat}), 4326))) IS TRUE AND name<>'' LIMIT 1;"
+                f"WHERE ST_Within(ST_Transform(ST_GeomFromEWKT('SRID=4326;POINT({lng} {lat})'), 3857), geometry) " \
+                f"AND name<>'' LIMIT 1;"
         if not self.execute_query(query):
+            self.selected_data = json.dumps(self.selected_data)
             return 0
 
         if not (address is None):
-            self.selected_data = address
+            self.selected_data = json.dumps(address)
             return 0
 
         # Boundaries
         query = f"SELECT type, name FROM osm_boundaries " \
-                f"WHERE ST_Intersects(Geography(ST_Transform(geometry, 4326)), " \
-                f"Geography(ST_SetSRID(ST_Point({lng}, {lat}), 4326))) IS TRUE AND name<>'' LIMIT 1;"
+                f"WHERE ST_Within(ST_Transform(ST_GeomFromEWKT('SRID=4326;POINT({lng} {lat})'), 3857), geometry) " \
+                f"AND name<>'' LIMIT 1;"
         if not self.execute_query(query):
+            self.selected_data = json.dumps(self.selected_data)
             return 0
         else:
-            self._logger.error(f"Failed to define device's address.")
+            self._logger.error(f"Lng: {lng}, lat: {lat}. Failed to define device's address.")
             return -11
 
     def close_connection(self):
@@ -280,8 +288,7 @@ class ConnectionPostgis(Connection):
             cursor = self._connection.cursor()
             cursor.execute(query)
             cursor_data = cursor.fetchall()
-            r = dict((cursor.description[i][0], value) for i, value in enumerate(cursor_data[0]))
-            self.selected_data = json.dumps(r)
+            self.selected_data = dict((cursor.description[i][0], value) for i, value in enumerate(cursor_data[0]))
             return 0
         except Exception:
             self.selected_data = None
