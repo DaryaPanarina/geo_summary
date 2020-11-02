@@ -116,7 +116,7 @@ class ConnectionOracle(Connection):
     def select_data(self):
         query = f"SELECT DISTINCT a.device, a.lng, a.lat, a.speed, a.time FROM {self._table} a " \
                 f"INNER JOIN (SELECT device, min(time) time FROM {self._table} GROUP BY device ORDER BY device) b " \
-                f"ON a.device=b.device AND a.time=b.time OFFSET 0 ROWS FETCH NEXT 50 ROWS ONLY"
+                f"ON a.device=b.device AND a.time=b.time"
         try:
             cursor = self._connection.cursor()
             cursor.execute(query)
@@ -161,12 +161,14 @@ class ConnectionPostgresql(Connection):
             return -10
 
     def select_data(self, device_id):
-        query = f"SELECT cast(extract(epoch FROM max(last_location_time)) as integer) last_location_time" \
-                f" FROM {self._table} WHERE device_id={device_id};"
+        query = f"SELECT ST_X(last_location) lng, ST_Y(last_location) lat, " \
+                f"cast(extract(epoch FROM last_location_time) as bigint) last_location_time " \
+                f"FROM {self._table} WHERE device_id={device_id} AND " \
+                f"check_time=(SELECT max(check_time) FROM {self._table} WHERE device_id={device_id});"
         try:
             cursor = self._connection.cursor()
             cursor.execute(query)
-            self.selected_data = cursor.fetchall()[0][0]
+            self.selected_data = cursor.fetchall()
             return 0
         except Exception as e:
             self._logger.error(f"Device: {device_id}. Failed to select data from {self.dbms}. The error occurred: {e}")
@@ -319,7 +321,7 @@ class ConnectionRedis(Connection):
         name = "device:" + str(device_id) + ":last_pos"
         try:
             data = self._connection.hmget(name, ["data"])
-            if len(data) != 1:
+            if (len(data) != 1) or (data[0] is None):
                 self._logger.error(f"Device: {device_id}. Failed to select data from {self.dbms}.")
                 return -13
 
@@ -327,8 +329,8 @@ class ConnectionRedis(Connection):
             gps = gps_data_pb2.GPS()
             gps.ParseFromString(gps_str)
 
-            lng = gps.lon_deg + float(f"0.{gps.lon_flt}")
-            lat = gps.lat_deg + float(f"0.{gps.lat_flt}")
+            lng = gps.lon_deg + float(f"0.{abs(gps.lon_flt)}")
+            lat = gps.lat_deg + float(f"0.{abs(gps.lat_flt)}")
             self.selected_data = [device_id, lng, lat, gps.speed, gps.ts]
             return 0
         except Exception as e:
@@ -367,6 +369,9 @@ class ConnectionTimeZoneServer(Connection):
         try:
             response = self._connection.get(self._url, data=data)
             json_data = response.json()
+            if 'failed' in json_data:
+                self._logger.error(f"Failed to define timezone. Lat: {lat}, lng: {lng}, ts_utc: {ts_utc}. ")
+                return -13
             self.selected_data = int(json_data['shift']) / 3600
             return 0
         except Exception as e:
