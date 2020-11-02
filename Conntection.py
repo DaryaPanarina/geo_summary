@@ -66,18 +66,18 @@ class ConnectionMysql(Connection):
             )
             return 0
         except Exception as e:
-            self._logger.error(f"Failed to connect to {self.dbms}. The error occurred: {e}")
+            self._logger.error("Failed to connect to {}. The error occurred: {}".format(self.dbms, e))
             return -10
 
     def select_data(self):
-        query = f"SELECT device_id FROM {self._table};"
+        query = "SELECT device_id FROM {};".format(self._table)
         try:
             cursor = self._connection.cursor()
             cursor.execute(query)
             self.selected_data = cursor.fetchall()
             return 0
         except Exception as e:
-            self._logger.error(f"Failed to select data from {self.dbms}. The error occurred: {e}")
+            self._logger.error("Failed to select data from {}. The error occurred: {}".format(self.dbms, e))
             self.selected_data = None
             return -11
 
@@ -110,20 +110,21 @@ class ConnectionOracle(Connection):
             )
             return 0
         except Exception as e:
-            self._logger.error(f"Failed to connect to {self.dbms}. The error occurred: {e}")
+            self._logger.error("Failed to connect to {}. The error occurred: {}".format(self.dbms, e))
             return -10
 
     def select_data(self):
-        query = f"SELECT DISTINCT a.device, a.lng, a.lat, a.speed, a.time FROM {self._table} a " \
-                f"INNER JOIN (SELECT device, min(time) time FROM {self._table} GROUP BY device ORDER BY device) b " \
-                f"ON a.device=b.device AND a.time=b.time"
+        query = "SELECT DISTINCT a.device, a.lng, a.lat, a.speed, a.time FROM {} a " \
+                "INNER JOIN (SELECT device, min(time) time FROM {} GROUP BY device ORDER BY device) b " \
+                "ON a.device=b.device AND a.time=b.time OFFSET 0 ROWS FETCH NEXT 50 ROWS ONLY".format(self._table,
+                                                                                                      self._table)
         try:
             cursor = self._connection.cursor()
             cursor.execute(query)
             self.selected_data = cursor.fetchall()
             return 0
         except Exception as e:
-            self._logger.error(f"Failed to select data from {self.dbms}. The error occurred: {e}")
+            self._logger.error("Failed to select data from {}. The error occurred: {}".format(self.dbms, e))
             self.selected_data = None
             return -11
 
@@ -157,35 +158,37 @@ class ConnectionPostgresql(Connection):
             self._connection.autocommit = True
             return 0
         except Exception as e:
-            self._logger.error(f"Failed to connect to {self.dbms}. The error occurred: {e}")
+            self._logger.error("Failed to connect to {}. The error occurred: {}".format(self.dbms, e))
             return -10
 
     def select_data(self, device_id):
-        query = f"SELECT ST_X(last_location) lng, ST_Y(last_location) lat, " \
-                f"cast(extract(epoch FROM last_location_time) as bigint) last_location_time " \
-                f"FROM {self._table} WHERE device_id={device_id} AND " \
-                f"check_time=(SELECT max(check_time) FROM {self._table} WHERE device_id={device_id});"
+        query = "SELECT ST_X(last_location) lng, ST_Y(last_location) lat, " \
+                "cast(extract(epoch FROM last_location_time) as bigint) last_location_time " \
+                "FROM {} WHERE device_id={} AND " \
+                "check_time=(SELECT max(check_time) FROM {} WHERE device_id={});".format(self._table, device_id,
+                                                                                         self._table, device_id)
         try:
             cursor = self._connection.cursor()
             cursor.execute(query)
             self.selected_data = cursor.fetchall()
             return 0
         except Exception as e:
-            self._logger.error(f"Device: {device_id}. Failed to select data from {self.dbms}. The error occurred: {e}")
+            self._logger.error("Device: {}. Failed to select data from {}. The error occurred: {}".format(device_id,
+                                                                                                          self.dbms, e))
             self.selected_data = None
             return -11
 
     def insert_data(self, values):
         # values = [device_id, lng, lat, address, speed, last_location_time, timezone_shift]
-        query = f"INSERT INTO {self._table} VALUES(DEFAULT, %s, ST_SetSRID(ST_MakePoint(%s, %s),4326), %s, %s, " \
-                f"to_timestamp(%s), DEFAULT, %s)"
+        query = "INSERT INTO {} VALUES(DEFAULT, %s, ST_SetSRID(ST_MakePoint(%s, %s),4326), %s, %s, to_timestamp(%s), " \
+                "DEFAULT, %s)".format(self._table)
         try:
             cursor = self._connection.cursor()
             cursor.execute(query, values)
             return 0
         except Exception as e:
-            self._logger.error(f"Device: {values[0]}. Failed to insert new row into geo_summary. "
-                               f"The error occurred: {e}")
+            self._logger.error("Device: {}. Failed to insert new row into geo_summary. "
+                               "The error occurred: {}".format(values[0], e))
             return -11
 
     def close_connection(self):
@@ -214,14 +217,14 @@ class ConnectionPostgis(Connection):
             )
             return 0
         except Exception as e:
-            self._logger.error(f"Failed to connect to {self.dbms}. The error occurred: {e}")
+            self._logger.error("Failed to connect to {}. The error occurred: {}".format(self.dbms, e))
             return -10
 
     def select_data(self, lng, lat):
         # Buildings
-        query = f"SELECT postcode, city, street, housenumber, name FROM osm_buildings " \
-                f"WHERE ST_DWithin(Geography(ST_Transform(ST_Centroid(geometry), 4326)), " \
-                f"Geography(ST_SetSRID(ST_Point({lng}, {lat}), 4326)), 100) AND street<>'' LIMIT 1;"
+        query = "SELECT postcode, city, street, housenumber, name FROM osm_buildings " \
+                "WHERE ST_DWithin(Geography(ST_Transform(ST_Centroid(geometry), 4326)), " \
+                "Geography(ST_SetSRID(ST_Point({}, {}), 4326)), 100) AND street<>'' LIMIT 1;".format(lng, lat)
 
         error = self.execute_query(query)
         if (not error) and (self.selected_data['city']):
@@ -232,9 +235,9 @@ class ConnectionPostgis(Connection):
             address = self.selected_data
 
         # Cities
-        query = f"SELECT postcode, country, region, district, type, name FROM osm_cities " \
-                f"WHERE ST_Within(ST_Transform(ST_GeomFromEWKT('SRID=4326;POINT({lng} {lat})'), 3857), geometry) " \
-                f"AND name<>'' LIMIT 1;"
+        query = "SELECT postcode, country, region, district, type, name FROM osm_cities " \
+                "WHERE ST_Within(ST_Transform(ST_GeomFromEWKT('SRID=4326;POINT({} {})'), 3857), geometry) " \
+                "AND name<>'' LIMIT 1;".format(lng, lat)
 
         error = self.execute_query(query)
         if (not error) and not (address is None):
@@ -250,18 +253,22 @@ class ConnectionPostgis(Connection):
             address = self.selected_data
 
         # Roads
-        query = f"SELECT network, ref, highway, name FROM osm_highway_linestring " \
-                f"WHERE ST_DWithin(Geography(ST_Transform(geometry, 4326)), " \
-                f"Geography(ST_SetSRID(ST_Point({lng}, {lat}), 4326)), 100) AND name<>'' LIMIT 1;"
+        query = "SELECT network, ref, highway, name FROM osm_highway_linestring " \
+                "WHERE ST_DWithin(Geography(ST_Transform(geometry, 4326)), " \
+                "Geography(ST_SetSRID(ST_Point({}, {}), 4326)), 100) AND name<>'' LIMIT 1;".format(lng, lat)
         if not self.execute_query(query):
+            if not (address is None):
+                self.selected_data['city'] = address['name']
             self.selected_data = json.dumps(self.selected_data)
             return 0
 
         # Water
-        query = f"SELECT osm_water_polygon.natural, name FROM osm_water_polygon " \
-                f"WHERE ST_Within(ST_Transform(ST_GeomFromEWKT('SRID=4326;POINT({lng} {lat})'), 3857), geometry) " \
-                f"AND name<>'' LIMIT 1;"
+        query = "SELECT osm_water_polygon.natural, name FROM osm_water_polygon " \
+                "WHERE ST_Within(ST_Transform(ST_GeomFromEWKT('SRID=4326;POINT({} {})'), 3857), geometry) " \
+                "AND name<>'' LIMIT 1;".format(lng, lat)
         if not self.execute_query(query):
+            if not (address is None):
+                self.selected_data['city'] = address['name']
             self.selected_data = json.dumps(self.selected_data)
             return 0
 
@@ -270,14 +277,14 @@ class ConnectionPostgis(Connection):
             return 0
 
         # Boundaries
-        query = f"SELECT type, name FROM osm_boundaries " \
-                f"WHERE ST_Within(ST_Transform(ST_GeomFromEWKT('SRID=4326;POINT({lng} {lat})'), 3857), geometry) " \
-                f"AND name<>'' LIMIT 1;"
+        query = "SELECT type, name FROM osm_boundaries " \
+                "WHERE ST_Within(ST_Transform(ST_GeomFromEWKT('SRID=4326;POINT({} {})'), 3857), geometry) " \
+                "AND name<>'' LIMIT 1;".format(lng, lat)
         if not self.execute_query(query):
             self.selected_data = json.dumps(self.selected_data)
             return 0
         else:
-            self._logger.error(f"Lng: {lng}, lat: {lat}. Failed to define device's address.")
+            self._logger.error("Lng: {}, lat: {}. Failed to define device's address.".format(lng, lat))
             return -11
 
     def close_connection(self):
@@ -314,7 +321,7 @@ class ConnectionRedis(Connection):
             )
             return 0
         except Exception as e:
-            self._logger.error(f"Failed to connect to {self.dbms}. The error occurred: {e}")
+            self._logger.error("Failed to connect to {}. The error occurred: {}".format(self.dbms, e))
             return -10
 
     def select_data(self, device_id):
@@ -322,19 +329,20 @@ class ConnectionRedis(Connection):
         try:
             data = self._connection.hmget(name, ["data"])
             if (len(data) != 1) or (data[0] is None):
-                self._logger.error(f"Device: {device_id}. Failed to select data from {self.dbms}.")
+                self._logger.error("Device: {}. Failed to select data from {}.".format(device_id, self.dbms))
                 return -13
 
             gps_str = base64.b64decode(data[0].decode("utf-8"))
             gps = gps_data_pb2.GPS()
             gps.ParseFromString(gps_str)
 
-            lng = gps.lon_deg + float(f"0.{abs(gps.lon_flt)}")
-            lat = gps.lat_deg + float(f"0.{abs(gps.lat_flt)}")
+            lng = gps.lon_deg + float("0.{}".format(abs(gps.lon_flt)))
+            lat = gps.lat_deg + float("0.{}".format(abs(gps.lat_flt)))
             self.selected_data = [device_id, lng, lat, gps.speed, gps.ts]
             return 0
         except Exception as e:
-            self._logger.error(f"Device: {device_id}. Failed to select data from {self.dbms}. The error occurred: {e}")
+            self._logger.error("Device: {}. Failed to select data from {}. The error occurred: {}".format(device_id,
+                                                                                                          self.dbms, e))
             self.selected_data = None
             return -11
 
@@ -361,7 +369,7 @@ class ConnectionTimeZoneServer(Connection):
         try:
             self._connection = requests.Session()
         except Exception as e:
-            self._logger.error(f"Failed to connect to {self.dbms}. The error occurred: {e}")
+            self._logger.error("Failed to connect to {}. The error occurred: {}".format(self.dbms, e))
             return -10
 
     def select_data(self, lng, lat, ts_utc):
@@ -370,13 +378,13 @@ class ConnectionTimeZoneServer(Connection):
             response = self._connection.get(self._url, data=data)
             json_data = response.json()
             if 'failed' in json_data:
-                self._logger.error(f"Failed to define timezone. Lat: {lat}, lng: {lng}, ts_utc: {ts_utc}. ")
+                self._logger.error("Failed to define timezone. Lat: {}, lng: {}, ts_utc: {}. ").format(lat, lng, ts_utc)
                 return -13
             self.selected_data = int(json_data['shift']) / 3600
             return 0
         except Exception as e:
-            self._logger.error(f"Failed to define timezone. Lat: {lat}, lng: {lng}, ts_utc: {ts_utc}. "
-                               f"The error occurred: {e}")
+            self._logger.error("Failed to define timezone. Lat: {}, lng: {}, ts_utc: {}. "
+                               "The error occurred: {}".format(lat, lng, ts_utc, e))
             self.selected_data = None
             return -11
 

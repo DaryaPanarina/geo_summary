@@ -28,7 +28,7 @@ def insert_first_dev_locations(logger):
     # Select data of the first position for each device
     start = time.time()
     error = con_oracle.select_data()
-    logger.info(f"Oracle select data. Time: {time.time() - start}")
+    logger.info("Oracle select data. Time: {}".format(time.time() - start)) #"Failed to connect to {}. The error occurred: {}".format(self.dbms, e)
     if error:
         return (error,)
 
@@ -87,7 +87,7 @@ def insert_last_dev_locations(logger):
     # Select list of all devices
     start = time.time()
     error = con_mysql.select_data()
-    logger.info(f"MySQL select data. Time: {time.time() - start}")
+    logger.info("MySQL select data. Time: {}".format(time.time() - start))
     if error:
         return [error]
 
@@ -157,13 +157,13 @@ if __name__ == '__main__':
         sys.exit(ans[0])
     else:
         if '--first' in sys.argv:
-            ans_str = f"Inserted {ans[1]} rows. {ans[0]} errors occurred."
+            ans_str = "Inserted {} rows. {} errors occurred.".format(ans[1], ans[0])
         else:
-            ans_str = f"Inserted {ans[1]} rows. {ans[2]} devices haven't changed their location. " \
-                      f"{ans[0]} errors occurred."
+            ans_str = "Inserted {} rows. {} devices haven't changed their location. " \
+                      "{} errors occurred.".format(ans[1], ans[2], ans[0])
 
         logger.info(ans_str)
         print(ans_str)
-    time_str = f"Runtime of the program is {time.time() - start}"
+    time_str = "Runtime of the program is {}".format(time.time() - start)
     logger.info(time_str)
     print(time_str)
