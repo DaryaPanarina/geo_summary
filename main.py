@@ -1,4 +1,5 @@
 import sys
+import argparse
 import logging
 from datetime import datetime
 import time
@@ -6,21 +7,21 @@ import time
 import Connection as con
 
 
-def insert_first_dev_locations(logger):
+def insert_first_dev_locations(config, logger):
     # Connect to databases and TimeZoneServer
-    con_oracle = con.ConnectionOracle(logger)
+    con_oracle = con.ConnectionOracle(config, logger)
     error = con_oracle.create_connection()
     if error:
         return (error,)
-    con_psql = con.ConnectionPostgresql(logger)
+    con_psql = con.ConnectionPostgresql(config, logger)
     error = con_psql.create_connection()
     if error:
         return (error,)
-    con_postgis = con.ConnectionPostgis(logger)
+    con_postgis = con.ConnectionPostgis(config, logger)
     error = con_postgis.create_connection()
     if error:
         return (error,)
-    con_tz = con.ConnectionTimeZoneServer(logger)
+    con_tz = con.ConnectionTimeZoneServer(config, logger)
     error = con_tz.create_connection()
     if error:
         return (error,)
@@ -28,13 +29,14 @@ def insert_first_dev_locations(logger):
     # Select data of the first position for each device
     start = time.time()
     error = con_oracle.select_data()
-    logger.info("Oracle select data. Time: {}".format(time.time() - start)) #"Failed to connect to {}. The error occurred: {}".format(self.dbms, e)
+    logger.info("Oracle select data. Time: {}.".format(time.time() - start))
     if error:
         return (error,)
 
     # Update geo_summary
     errors_cnt = 0
     inserted_rows_cnt = 0
+    start = time.time()
     # row = [device, lng, lat, speed, time]
     for row in con_oracle.selected_data:
         if row[0] is None:
@@ -58,28 +60,29 @@ def insert_first_dev_locations(logger):
             inserted_rows_cnt += 1
         else:
             errors_cnt += 1
+    logger.info("Processing data time: {}.".format(time.time() - start))
     return errors_cnt, inserted_rows_cnt
 
 
-def insert_last_dev_locations(logger):
+def insert_last_dev_locations(config, logger):
     # Connections to databases and TimeZoneServer
-    con_mysql = con.ConnectionMysql(logger)
+    con_mysql = con.ConnectionMysql(config, logger)
     error = con_mysql.create_connection()
     if error:
         return [error]
-    con_redis = con.ConnectionRedis(logger)
+    con_redis = con.ConnectionRedis(config, logger)
     error = con_redis.create_connection()
     if error:
         return [error]
-    con_psql = con.ConnectionPostgresql(logger)
+    con_psql = con.ConnectionPostgresql(config, logger)
     error = con_psql.create_connection()
     if error:
         return [error]
-    con_postgis = con.ConnectionPostgis(logger)
+    con_postgis = con.ConnectionPostgis(config, logger)
     error = con_postgis.create_connection()
     if error:
         return [error]
-    con_tz = con.ConnectionTimeZoneServer(logger)
+    con_tz = con.ConnectionTimeZoneServer(config, logger)
     error = con_tz.create_connection()
     if error:
         return [error]
@@ -87,7 +90,7 @@ def insert_last_dev_locations(logger):
     # Select list of all devices
     start = time.time()
     error = con_mysql.select_data()
-    logger.info("MySQL select data. Time: {}".format(time.time() - start))
+    logger.info("MySQL select data. Time: {}.".format(time.time() - start))
     if error:
         return [error]
 
@@ -95,6 +98,7 @@ def insert_last_dev_locations(logger):
     errors_cnt = 0
     inserted_rows_cnt = 0
     unchanged_loc_cnt = 0
+    start = time.time()
     # device = [device_id, ]
     for device in con_mysql.selected_data:
         # con_redis.selected_data = [device_id, lng, lat, speed, time]
@@ -131,6 +135,7 @@ def insert_last_dev_locations(logger):
             inserted_rows_cnt += 1
         else:
             errors_cnt += 1
+    logger.info("Processing data time: {}.".format(time.time() - start))
     return [errors_cnt, inserted_rows_cnt, unchanged_loc_cnt]
 
 
@@ -138,25 +143,34 @@ if __name__ == '__main__':
     # starting time
     start = time.time()
 
+    # Parsing arguments
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('-c', default="config.yaml", type=str, help="path to configuration file", metavar="path")
+    parser.add_argument('-f', '--first', action='store_true',
+                        help="script defines address of the first location for each device")
+    namespace = parser.parse_args(sys.argv[1:])
+
     logging.basicConfig(filename='geo_summary_error.log', filemode='w', format='[%(levelname)s]   %(message)s')
     logger = logging.getLogger("geo_summary")
     logger.setLevel('INFO')
 
-    if '--first' in sys.argv:
-        logger.info("Insert first devices' locations")
-        ans = insert_first_dev_locations(logger)
+    print("Start")
+    if namespace.first:
+        logger.info("Insert first devices' locations.")
+        ans = insert_first_dev_locations(namespace.c, logger)
     else:
-        logger.info("Insert last devices' locations")
-        ans = insert_last_dev_locations(logger)
+        logger.info("Insert last devices' locations.")
+        ans = insert_last_dev_locations(namespace.c, logger)
 
     if ans[0] == -10:
-        print("Failed to connect to database.")
+        print("Failed to connect to database. Details are in geo_summary_error.log.")
         sys.exit(ans[0])
     elif ans[0] == -11:
-        print("Failed to select data from database.")
+        print("Failed to select data from database. Details are in geo_summary_error.log.")
         sys.exit(ans[0])
     else:
-        if '--first' in sys.argv:
+        if namespace.first:
             ans_str = "Inserted {} rows. {} errors occurred.".format(ans[1], ans[0])
         else:
             ans_str = "Inserted {} rows. {} devices haven't changed their location. " \
@@ -164,6 +178,6 @@ if __name__ == '__main__':
 
         logger.info(ans_str)
         print(ans_str)
-    time_str = "Runtime of the program is {}".format(time.time() - start)
+    time_str = "Runtime of the program is {}.".format(time.time() - start)
     logger.info(time_str)
     print(time_str)

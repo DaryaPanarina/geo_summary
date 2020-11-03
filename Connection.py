@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-import configparser
+import yaml
 import base64
 import json
 
@@ -16,19 +16,40 @@ import gps_data_pb2
 class Connection(ABC):
     dbms = ""
 
-    def __init__(self, logger):
-        config = configparser.ConfigParser()
-        config.read("config.ini")
-        self._host = config[self.dbms]["host"]
-        self._port = config[self.dbms]["port"]
-        if config.has_option(self.dbms, "user"):
+    def __init__(self, config_file, logger):
+        config = None
+        with open(config_file, 'r') as stream:
+            try:
+                config = yaml.safe_load(stream)
+            except yaml.YAMLError as e:
+                logger.critical("Failed to read configuration file. The error occurred: {}.".format(e))
+                return
+        if "host" in config[self.dbms]:
+            self._host = config[self.dbms]["host"]
+        else:
+            logger.critical("{}. Failed to read host from configuration file.".format(self.dbms))
+            self._host = ""
+        if "port" in config[self.dbms]:
+            self._port = config[self.dbms]["port"]
+        else:
+            logger.critical("{}. Failed to read port from configuration file.".format(self.dbms))
+            self._port = ""
+        if "user" in config[self.dbms]:
             self._user = config[self.dbms]["user"]
-        if config.has_option(self.dbms, "password"):
+        else:
+            self._user = ""
+        if "password" in config[self.dbms]:
             self._password = config[self.dbms]["password"]
-        if config.has_option(self.dbms, "database"):
+        else:
+            self._password = ""
+        if "database" in config[self.dbms]:
             self._database = config[self.dbms]["database"]
-        if config.has_option(self.dbms, "table"):
+        else:
+            self._database = ""
+        if "table" in config[self.dbms]:
             self._table = config[self.dbms]["table"]
+        else:
+            self._table = ""
         self._connection = None
         self.selected_data = None
         self._logger = logger
@@ -47,9 +68,9 @@ class Connection(ABC):
 
 
 class ConnectionMysql(Connection):
-    def __init__(self, logger):
+    def __init__(self, config_file, logger):
         self.dbms = "MySQL"
-        super().__init__(logger)
+        super().__init__(config_file, logger)
 
     def __del__(self):
         self.close_connection()
@@ -66,7 +87,7 @@ class ConnectionMysql(Connection):
             )
             return 0
         except Exception as e:
-            self._logger.error("Failed to connect to {}. The error occurred: {}".format(self.dbms, e))
+            self._logger.error("Failed to connect to {}. The error occurred: {}.".format(self.dbms, e))
             return -10
 
     def select_data(self):
@@ -77,7 +98,7 @@ class ConnectionMysql(Connection):
             self.selected_data = cursor.fetchall()
             return 0
         except Exception as e:
-            self._logger.error("Failed to select data from {}. The error occurred: {}".format(self.dbms, e))
+            self._logger.error("Failed to select data from {}. The error occurred: {}.".format(self.dbms, e))
             self.selected_data = None
             return -11
 
@@ -88,9 +109,9 @@ class ConnectionMysql(Connection):
 
 
 class ConnectionOracle(Connection):
-    def __init__(self, logger):
+    def __init__(self, config_file, logger):
         self.dbms = "Oracle"
-        super().__init__(logger)
+        super().__init__(config_file, logger)
 
     def __del__(self):
         self.close_connection()
@@ -110,7 +131,7 @@ class ConnectionOracle(Connection):
             )
             return 0
         except Exception as e:
-            self._logger.error("Failed to connect to {}. The error occurred: {}".format(self.dbms, e))
+            self._logger.error("Failed to connect to {}. The error occurred: {}.".format(self.dbms, e))
             return -10
 
     def select_data(self):
@@ -124,7 +145,7 @@ class ConnectionOracle(Connection):
             self.selected_data = cursor.fetchall()
             return 0
         except Exception as e:
-            self._logger.error("Failed to select data from {}. The error occurred: {}".format(self.dbms, e))
+            self._logger.error("Failed to select data from {}. The error occurred: {}.".format(self.dbms, e))
             self.selected_data = None
             return -11
 
@@ -138,9 +159,9 @@ class ConnectionOracle(Connection):
 
 
 class ConnectionPostgresql(Connection):
-    def __init__(self, logger):
+    def __init__(self, config_file, logger):
         self.dbms = "PostgreSQL"
-        super().__init__(logger)
+        super().__init__(config_file, logger)
 
     def __del__(self):
         self.close_connection()
@@ -158,7 +179,7 @@ class ConnectionPostgresql(Connection):
             self._connection.autocommit = True
             return 0
         except Exception as e:
-            self._logger.error("Failed to connect to {}. The error occurred: {}".format(self.dbms, e))
+            self._logger.error("Failed to connect to {}. The error occurred: {}.".format(self.dbms, e))
             return -10
 
     def select_data(self, device_id):
@@ -173,7 +194,7 @@ class ConnectionPostgresql(Connection):
             self.selected_data = cursor.fetchall()
             return 0
         except Exception as e:
-            self._logger.error("Device: {}. Failed to select data from {}. The error occurred: {}".format(device_id,
+            self._logger.error("Device: {}. Failed to select data from {}. The error occurred: {}.".format(device_id,
                                                                                                           self.dbms, e))
             self.selected_data = None
             return -11
@@ -188,7 +209,7 @@ class ConnectionPostgresql(Connection):
             return 0
         except Exception as e:
             self._logger.error("Device: {}. Failed to insert new row into geo_summary. "
-                               "The error occurred: {}".format(values[0], e))
+                               "The error occurred: {}.".format(values[0], e))
             return -11
 
     def close_connection(self):
@@ -198,9 +219,9 @@ class ConnectionPostgresql(Connection):
 
 
 class ConnectionPostgis(Connection):
-    def __init__(self, logger):
+    def __init__(self, config_file, logger):
         self.dbms = "PostGIS"
-        super().__init__(logger)
+        super().__init__(config_file, logger)
 
     def __del__(self):
         self.close_connection()
@@ -217,7 +238,7 @@ class ConnectionPostgis(Connection):
             )
             return 0
         except Exception as e:
-            self._logger.error("Failed to connect to {}. The error occurred: {}".format(self.dbms, e))
+            self._logger.error("Failed to connect to {}. The error occurred: {}.".format(self.dbms, e))
             return -10
 
     def select_data(self, lng, lat):
@@ -305,9 +326,9 @@ class ConnectionPostgis(Connection):
 
 
 class ConnectionRedis(Connection):
-    def __init__(self, logger):
+    def __init__(self, config_file, logger):
         self.dbms = "Redis"
-        super().__init__(logger)
+        super().__init__(config_file, logger)
 
     def __del__(self):
         self.close_connection()
@@ -321,7 +342,7 @@ class ConnectionRedis(Connection):
             )
             return 0
         except Exception as e:
-            self._logger.error("Failed to connect to {}. The error occurred: {}".format(self.dbms, e))
+            self._logger.error("Failed to connect to {}. The error occurred: {}.".format(self.dbms, e))
             return -10
 
     def select_data(self, device_id):
@@ -341,7 +362,7 @@ class ConnectionRedis(Connection):
             self.selected_data = [device_id, lng, lat, gps.speed, gps.ts]
             return 0
         except Exception as e:
-            self._logger.error("Device: {}. Failed to select data from {}. The error occurred: {}".format(device_id,
+            self._logger.error("Device: {}. Failed to select data from {}. The error occurred: {}.".format(device_id,
                                                                                                           self.dbms, e))
             self.selected_data = None
             return -11
@@ -356,9 +377,9 @@ class ConnectionRedis(Connection):
 
 
 class ConnectionTimeZoneServer(Connection):
-    def __init__(self, logger):
+    def __init__(self, config_file, logger):
         self.dbms = "TimeZoneServer"
-        super().__init__(logger)
+        super().__init__(config_file, logger)
         self._url = "http://" + self._host + ':' + str(self._port) + '/tz.json'
 
     def __del__(self):
@@ -369,7 +390,7 @@ class ConnectionTimeZoneServer(Connection):
         try:
             self._connection = requests.Session()
         except Exception as e:
-            self._logger.error("Failed to connect to {}. The error occurred: {}".format(self.dbms, e))
+            self._logger.error("Failed to connect to {}. The error occurred: {}.".format(self.dbms, e))
             return -10
 
     def select_data(self, lng, lat, ts_utc):
@@ -378,13 +399,13 @@ class ConnectionTimeZoneServer(Connection):
             response = self._connection.get(self._url, data=data)
             json_data = response.json()
             if 'failed' in json_data:
-                self._logger.error("Failed to define timezone. Lat: {}, lng: {}, ts_utc: {}. ").format(lat, lng, ts_utc)
+                self._logger.error("Failed to define timezone. Lat: {}, lng: {}, ts_utc: {}.").format(lat, lng, ts_utc)
                 return -13
             self.selected_data = int(json_data['shift']) / 3600
             return 0
         except Exception as e:
             self._logger.error("Failed to define timezone. Lat: {}, lng: {}, ts_utc: {}. "
-                               "The error occurred: {}".format(lat, lng, ts_utc, e))
+                               "The error occurred: {}.".format(lat, lng, ts_utc, e))
             self.selected_data = None
             return -11
 
