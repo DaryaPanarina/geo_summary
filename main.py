@@ -3,7 +3,7 @@ import logging
 from datetime import datetime
 import time
 
-import Conntection as con
+import Connection as con
 
 
 def insert_first_dev_locations(logger):
