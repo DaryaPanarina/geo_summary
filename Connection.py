@@ -17,42 +17,27 @@ class Connection(ABC):
     dbms = ""
 
     def __init__(self, config_file, logger):
-        config = None
-        with open(config_file, 'r') as stream:
-            try:
-                config = yaml.safe_load(stream)
-            except yaml.YAMLError as e:
-                logger.critical("Failed to read configuration file. The error occurred: {}.".format(e))
-                return
-        if "host" in config[self.dbms]:
-            self._host = config[self.dbms]["host"]
-        else:
-            logger.critical("{}. Failed to read host from configuration file.".format(self.dbms))
-            self._host = ""
-        if "port" in config[self.dbms]:
-            self._port = config[self.dbms]["port"]
-        else:
-            logger.critical("{}. Failed to read port from configuration file.".format(self.dbms))
-            self._port = ""
-        if "user" in config[self.dbms]:
-            self._user = config[self.dbms]["user"]
-        else:
-            self._user = ""
-        if "password" in config[self.dbms]:
-            self._password = config[self.dbms]["password"]
-        else:
-            self._password = ""
-        if "database" in config[self.dbms]:
-            self._database = config[self.dbms]["database"]
-        else:
-            self._database = ""
-        if "table" in config[self.dbms]:
-            self._table = config[self.dbms]["table"]
-        else:
-            self._table = ""
+        self._host = "-"
+        self._port = "-"
+        self._user = "-"
+        self._password = "-"
+        self._database = "-"
+        self._table = "-"
         self._connection = None
         self.selected_data = None
         self._logger = logger
+        with open(config_file, 'r') as stream:
+            config = yaml.safe_load(stream)
+        self._host = config[self.dbms]["host"]
+        self._port = config[self.dbms]["port"]
+        if "user" in config[self.dbms]:
+            self._user = config[self.dbms]["user"]
+        if "password" in config[self.dbms]:
+            self._password = config[self.dbms]["password"]
+        if "database" in config[self.dbms]:
+            self._database = config[self.dbms]["database"]
+        if "table" in config[self.dbms]:
+            self._table = config[self.dbms]["table"]
 
     @abstractmethod
     def create_connection(self):
@@ -71,6 +56,14 @@ class ConnectionMysql(Connection):
     def __init__(self, config_file, logger):
         self.dbms = "MySQL"
         super().__init__(config_file, logger)
+        if self._user == "-":
+            raise Exception("'user'")
+        if self._password == "-":
+            raise Exception("'password'")
+        if self._database == "-":
+            raise Exception("'database'")
+        if self._table == "-":
+            raise Exception("'table'")
 
     def __del__(self):
         self.close_connection()
@@ -112,6 +105,14 @@ class ConnectionOracle(Connection):
     def __init__(self, config_file, logger):
         self.dbms = "Oracle"
         super().__init__(config_file, logger)
+        if self._user == "-":
+            raise Exception("'user'")
+        if self._password == "-":
+            raise Exception("'password'")
+        if self._database == "-":
+            raise Exception("'database'")
+        if self._table == "-":
+            raise Exception("'table'")
 
     def __del__(self):
         self.close_connection()
@@ -162,6 +163,14 @@ class ConnectionPostgresql(Connection):
     def __init__(self, config_file, logger):
         self.dbms = "PostgreSQL"
         super().__init__(config_file, logger)
+        if self._user == "-":
+            raise Exception("'user'")
+        if self._password == "-":
+            raise Exception("'password'")
+        if self._database == "-":
+            raise Exception("'database'")
+        if self._table == "-":
+            raise Exception("'table'")
 
     def __del__(self):
         self.close_connection()
@@ -222,6 +231,12 @@ class ConnectionPostgis(Connection):
     def __init__(self, config_file, logger):
         self.dbms = "PostGIS"
         super().__init__(config_file, logger)
+        if self._user == "-":
+            raise Exception("'user'")
+        if self._password == "-":
+            raise Exception("'password'")
+        if self._database == "-":
+            raise Exception("'database'")
 
     def __del__(self):
         self.close_connection()

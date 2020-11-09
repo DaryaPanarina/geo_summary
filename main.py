@@ -9,22 +9,26 @@ import Connection as con
 
 def insert_first_dev_locations(config, logger):
     # Connect to databases and TimeZoneServer
-    con_oracle = con.ConnectionOracle(config, logger)
-    error = con_oracle.create_connection()
-    if error:
-        return (error,)
-    con_psql = con.ConnectionPostgresql(config, logger)
-    error = con_psql.create_connection()
-    if error:
-        return (error,)
-    con_postgis = con.ConnectionPostgis(config, logger)
-    error = con_postgis.create_connection()
-    if error:
-        return (error,)
-    con_tz = con.ConnectionTimeZoneServer(config, logger)
-    error = con_tz.create_connection()
-    if error:
-        return (error,)
+    try:
+        con_oracle = con.ConnectionOracle(config, logger)
+        error = con_oracle.create_connection()
+        if error:
+            return (error,)
+        con_psql = con.ConnectionPostgresql(config, logger)
+        error = con_psql.create_connection()
+        if error:
+            return (error,)
+        con_postgis = con.ConnectionPostgis(config, logger)
+        error = con_postgis.create_connection()
+        if error:
+            return (error,)
+        con_tz = con.ConnectionTimeZoneServer(config, logger)
+        error = con_tz.create_connection()
+        if error:
+            return (error,)
+    except Exception as e:
+        logger.critical("Failed to read configuration file. The error occurred: {}.".format(e))
+        return (-10,)
 
     # Select data of the first position for each device
     start = time.time()
@@ -66,33 +70,37 @@ def insert_first_dev_locations(config, logger):
 
 def insert_last_dev_locations(config, logger):
     # Connections to databases and TimeZoneServer
-    con_mysql = con.ConnectionMysql(config, logger)
-    error = con_mysql.create_connection()
-    if error:
-        return [error]
-    con_redis = con.ConnectionRedis(config, logger)
-    error = con_redis.create_connection()
-    if error:
-        return [error]
-    con_psql = con.ConnectionPostgresql(config, logger)
-    error = con_psql.create_connection()
-    if error:
-        return [error]
-    con_postgis = con.ConnectionPostgis(config, logger)
-    error = con_postgis.create_connection()
-    if error:
-        return [error]
-    con_tz = con.ConnectionTimeZoneServer(config, logger)
-    error = con_tz.create_connection()
-    if error:
-        return [error]
+    try:
+        con_mysql = con.ConnectionMysql(config, logger)
+        error = con_mysql.create_connection()
+        if error:
+            return (error,)
+        con_redis = con.ConnectionRedis(config, logger)
+        error = con_redis.create_connection()
+        if error:
+            return (error,)
+        con_psql = con.ConnectionPostgresql(config, logger)
+        error = con_psql.create_connection()
+        if error:
+            return (error,)
+        con_postgis = con.ConnectionPostgis(config, logger)
+        error = con_postgis.create_connection()
+        if error:
+            return (error,)
+        con_tz = con.ConnectionTimeZoneServer(config, logger)
+        error = con_tz.create_connection()
+        if error:
+            return (error,)
+    except Exception as e:
+        logger.critical("Failed to read configuration file. The error occurred: {}.".format(e))
+        return (-10,)
 
     # Select list of all devices
     start = time.time()
     error = con_mysql.select_data()
     logger.info("MySQL select data. Time: {}.".format(time.time() - start))
     if error:
-        return [error]
+        return (error,)
 
     # Check last location of each device
     errors_cnt = 0
@@ -136,7 +144,7 @@ def insert_last_dev_locations(config, logger):
         else:
             errors_cnt += 1
     logger.info("Processing data time: {}.".format(time.time() - start))
-    return [errors_cnt, inserted_rows_cnt, unchanged_loc_cnt]
+    return errors_cnt, inserted_rows_cnt, unchanged_loc_cnt
 
 
 if __name__ == '__main__':

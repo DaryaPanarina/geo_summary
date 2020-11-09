@@ -1,0 +1,39 @@
+PostgreSQL:
+ host: value
+ port: value
+ user: value
+ password: value
+ database: value
+ table: value
+
+
+MySQL:
+ host: value
+ port: value
+ user: value
+ password: value
+ database: value
+ table: value
+
+Oracle:
+ host: value
+ port: value
+ user: value
+ password: value
+ database: value
+ table: value
+
+PostGIS:
+ host: value
+ port: value
+ user: value
+ password: value
+ database: value
+
+Redis:
+ host: value
+ port: value
+
+TimeZoneServer:
+ host: value
+ port: value
