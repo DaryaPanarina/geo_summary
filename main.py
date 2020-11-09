@@ -76,7 +76,7 @@ def insert_last_dev_locations(config, logger):
         if error:
             return (error,)
         con_redis = con.ConnectionRedis(config, logger)
-        error = con_redis.create_connection()
+        error = con_redis.create_connection(None)
         if error:
             return (error,)
         con_psql = con.ConnectionPostgresql(config, logger)

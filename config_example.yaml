@@ -6,7 +6,6 @@ PostgreSQL:
  database: value
  table: value
 
-
 MySQL:
  host: value
  port: value
