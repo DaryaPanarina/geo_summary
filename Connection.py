@@ -137,8 +137,7 @@ class ConnectionOracle(Connection):
     def select_data(self):
         query = "SELECT DISTINCT a.device, a.lng, a.lat, a.speed, a.time FROM {} a " \
                 "INNER JOIN (SELECT device, min(time) time FROM {} GROUP BY device ORDER BY device) b " \
-                "ON a.device=b.device AND a.time=b.time OFFSET 0 ROWS FETCH NEXT 50 ROWS ONLY".format(self._table,
-                                                                                                      self._table)
+                "ON a.device=b.device AND a.time=b.time".format(self._table, self._table)
         try:
             cursor = self._connection.cursor()
             cursor.execute(query)
