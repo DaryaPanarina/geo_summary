@@ -7,6 +7,14 @@ import time
 import Connection as con
 
 
+# Print iterations progress
+def print_progress(iteration, total):
+    percent = "{:.2f}".format((iteration / float(total)) * 100)
+    print("Progress: {}% complete".format(percent), end="\r")
+    # Print New Line on Complete
+    if iteration == total:
+        print()
+
 def insert_first_dev_locations(config, logger):
     # Connect to databases and TimeZoneServer
     try:
@@ -43,6 +51,9 @@ def insert_first_dev_locations(config, logger):
     start = time.time()
     # row = [device, lng, lat, speed, time]
     for row in con_oracle.selected_data:
+        # Print current progress
+        print_progress(inserted_rows_cnt + errors_cnt, len(con_oracle.selected_data))
+
         if row[0] is None:
             continue
 
@@ -64,6 +75,7 @@ def insert_first_dev_locations(config, logger):
             inserted_rows_cnt += 1
         else:
             errors_cnt += 1
+    print_progress(inserted_rows_cnt + errors_cnt, len(con_oracle.selected_data))
     logger.info("Processing data time: {}.".format(time.time() - start))
     return errors_cnt, inserted_rows_cnt
 
@@ -109,6 +121,9 @@ def insert_last_dev_locations(config, logger):
     start = time.time()
     # device = [device_id, ]
     for device in con_mysql.selected_data:
+        # Print current progress
+        print_progress(inserted_rows_cnt + unchanged_loc_cnt + errors_cnt, len(con_mysql.selected_data))
+
         # con_redis.selected_data = [device_id, lng, lat, speed, time]
         if con_redis.select_data(device[0]):
             errors_cnt += 1
@@ -143,6 +158,7 @@ def insert_last_dev_locations(config, logger):
             inserted_rows_cnt += 1
         else:
             errors_cnt += 1
+    print_progress(inserted_rows_cnt + unchanged_loc_cnt + errors_cnt, len(con_mysql.selected_data))
     logger.info("Processing data time: {}.".format(time.time() - start))
     return errors_cnt, inserted_rows_cnt, unchanged_loc_cnt
 

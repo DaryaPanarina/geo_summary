@@ -289,8 +289,8 @@ class ConnectionPostgis(Connection):
 
         # Roads
         query = "SELECT network, ref, highway, name FROM osm_highway_linestring " \
-                "WHERE ST_DWithin(Geography(ST_Transform(geometry, 4326)), " \
-                "Geography(ST_SetSRID(ST_Point({}, {}), 4326)), 100) AND name<>'' LIMIT 1;".format(lng, lat)
+                "WHERE ST_DWithin(ST_Transform(ST_GeomFromEWKT('SRID=4326;POINT({} {})'), 3857), geometry, 100) " \
+                "AND name<>'' LIMIT 1;".format(lng, lat)
         if not self.execute_query(query):
             if not (address is None):
                 self.selected_data['city'] = address['name']
