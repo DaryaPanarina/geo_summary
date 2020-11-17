@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 import yaml
 import base64
 import json
+from datetime import datetime
 
 import mysql.connector
 import cx_Oracle
@@ -112,6 +113,7 @@ class ConnectionOracle(Connection):
             raise Exception("'database'")
         if self._table == "-":
             raise Exception("'table'")
+        self._cursor = None
 
     def __del__(self):
         self.close_connection()
@@ -129,24 +131,37 @@ class ConnectionOracle(Connection):
                 password=self._password,
                 dsn=dsn_tns
             )
+            self._cursor1 = self._connection.cursor()
+            self._cursor1.prefetchrows = 11
+            query = "SELECT device, min(time) time FROM {} GROUP BY device ORDER BY device " \
+                    "OFFSET :off ROWS FETCH NEXT 10 ROWS ONLY".format(self._table)
+            self._cursor1.prepare(query)
+            self._cursor2 = self._connection.cursor()
+            query = "SELECT device, lng, lat, speed, time FROM {} WHERE device=:dev AND " \
+                    "time=TO_TIMESTAMP(:tm, 'DD-MM-YYYY HH24.MI.SS.FF') AND ROWNUM < 2".format(self._table)
+            self._cursor2.prepare(query)
             return 0
         except Exception as e:
             self._logger.error("Failed to connect to {}. The error occurred: {}.".format(self.dbms, e))
             return -10
 
-    def select_data(self):
-        query = "SELECT DISTINCT a.device, a.lng, a.lat, a.speed, a.time FROM {} a " \
-                "INNER JOIN (SELECT device, min(time) time FROM {} GROUP BY device ORDER BY device) b " \
-                "ON a.device=b.device AND a.time=b.time".format(self._table, self._table)
-        try:
-            cursor = self._connection.cursor()
-            cursor.execute(query)
-            self.selected_data = cursor.fetchall()
-            return 0
-        except Exception as e:
-            self._logger.error("Failed to select data from {}. The error occurred: {}.".format(self.dbms, e))
-            self.selected_data = None
-            return -11
+    def select_data(self, offset, device=0, dev_time=datetime(1970, 1, 1, 0, 0, 0, 0)):
+        if offset != -1:
+            try:
+                self._cursor1.execute(None, off=offset)
+                self.selected_data = self._cursor1.fetchall()
+                return 0
+            except Exception as e:
+                self._logger.error("Failed to select data from {}. The error occurred: {}.".format(self.dbms, e))
+                self.selected_data = None
+                return -11
+        else:
+            try:
+                self._cursor2.execute(None, dev=device, tm=dev_time.strftime('%d-%m-%Y %H.%M.%S.%f'))
+                return self._cursor2.fetchall()[0]
+            except Exception as e:
+                self._logger.error("Failed to select data from {}. The error occurred: {}.".format(self.dbms, e))
+                return (-11,)
 
     def close_connection(self):
         self.selected_data = None
@@ -310,6 +325,9 @@ class ConnectionPostgis(Connection):
         if not (address is None):
             self.selected_data = json.dumps(address)
             return 0
+        else:
+            self._logger.error("Lng: {}, lat: {}. Failed to define device's address.".format(lng, lat))
+            return -11
 
         # Boundaries
         query = "SELECT type, name FROM osm_boundaries " \
@@ -440,7 +458,7 @@ class ConnectionTimeZoneServer(Connection):
             response = self._connection.get(self._url, data=data)
             json_data = response.json()
             if 'failed' in json_data:
-                self._logger.error("Failed to define timezone. Lat: {}, lng: {}, ts_utc: {}.").format(lat, lng, ts_utc)
+                self._logger.error("Failed to define timezone. Lat: {}, lng: {}, ts_utc: {}.".format(lat, lng, ts_utc))
                 return -13
             self.selected_data = int(json_data['shift']) / 3600
             return 0

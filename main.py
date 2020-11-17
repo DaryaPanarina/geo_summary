@@ -8,12 +8,9 @@ import Connection as con
 
 
 # Print iterations progress
-def print_progress(iteration, total):
-    percent = "{:.2f}".format((iteration / float(total)) * 100)
-    print("Progress: {}% complete".format(percent), end="\r")
-    # Print New Line on Complete
-    if iteration == total:
-        print()
+def print_progress(progress):
+    print("Progress: {} devices were processed".format(progress), end="\r")
+
 
 def insert_first_dev_locations(config, logger):
     # Connect to databases and TimeZoneServer
@@ -38,45 +35,62 @@ def insert_first_dev_locations(config, logger):
         logger.critical("Failed to read configuration file. The error occurred: {}.".format(e))
         return (-10,)
 
-    # Select data of the first position for each device
-    start = time.time()
-    error = con_oracle.select_data()
-    logger.info("Oracle select data. Time: {}.".format(time.time() - start))
-    if error:
-        return (error,)
-
     # Update geo_summary
+    cur_offset = 0
     errors_cnt = 0
     inserted_rows_cnt = 0
-    start = time.time()
-    # row = [device, lng, lat, speed, time]
-    for row in con_oracle.selected_data:
+    exec_time1 = 0
+    exec_time2 = 0
+    while 1:
         # Print current progress
-        print_progress(inserted_rows_cnt + errors_cnt, len(con_oracle.selected_data))
+        print_progress(inserted_rows_cnt + errors_cnt)
 
-        if row[0] is None:
-            continue
+        # Select data of the first position for each device
+        start = time.time()
+        con_oracle.select_data(cur_offset)
+        exec_time1 += time.time() - start
+        # if len(con_oracle.selected_data) == 0:
+        if cur_offset == 20:
+            break
+        cur_offset = cur_offset + 10
 
-        # Define address and timezone for each device
-        if con_tz.select_data(row[1], row[2], datetime.timestamp(row[4])):
-            errors_cnt += 1
-            continue
-        if con_postgis.select_data(row[1], row[2]):
-            errors_cnt += 1
-            continue
+        # row = [device, time]
+        for row in con_oracle.selected_data:
+            if row[0] is None:
+                logger.error("Null in device_id")
+                errors_cnt += 1
+                continue
+            # device_data = [device, lng, lat, speed, time]
+            start = time.time()
+            device_data = con_oracle.select_data(-1, row[0], row[1])
+            exec_time2 += time.time() - start
+            if device_data[0] < 0:
+                errors_cnt += 1
+                continue
 
-        # Insert new row into geo_summary
-        # [device_id, lng, lat, address, speed, last_location_time, timezone_shift]
-        speed = row[3]
-        if speed is None:
-            speed = 0
-        if not con_psql.insert_data((row[0], row[1], row[2], con_postgis.selected_data, speed, datetime.timestamp(row[4]),
-                                 con_tz.selected_data)):
-            inserted_rows_cnt += 1
-        else:
-            errors_cnt += 1
-    print_progress(inserted_rows_cnt + errors_cnt, len(con_oracle.selected_data))
-    logger.info("Processing data time: {}.".format(time.time() - start))
+            # Define timezone and address for each device
+            if con_tz.select_data(device_data[1], device_data[2], datetime.timestamp(device_data[4])):
+                errors_cnt += 1
+                continue
+            if con_postgis.select_data(device_data[1], device_data[2]):
+                errors_cnt += 1
+                continue
+
+            # Insert new row into geo_summary
+            # [device_id, lng, lat, address, speed, last_location_time, timezone_shift]
+            speed = device_data[3]
+            if speed is None:
+                speed = 0
+            if not con_psql.insert_data(
+                    (device_data[0], device_data[1], device_data[2], con_postgis.selected_data, speed,
+                     datetime.timestamp(device_data[4]), con_tz.selected_data)):
+                inserted_rows_cnt += 1
+            else:
+                errors_cnt += 1
+
+    logger.info("Average time of Oracle query execution 1: {}.".format(exec_time1 / (cur_offset / 10)))
+    logger.info("Average time of Oracle query execution 2: {}.".format(exec_time2 / cur_offset))
+    print_progress(inserted_rows_cnt + errors_cnt)
     return errors_cnt, inserted_rows_cnt
 
 
@@ -122,7 +136,7 @@ def insert_last_dev_locations(config, logger):
     # device = [device_id, ]
     for device in con_mysql.selected_data:
         # Print current progress
-        print_progress(inserted_rows_cnt + unchanged_loc_cnt + errors_cnt, len(con_mysql.selected_data))
+        print_progress(inserted_rows_cnt + unchanged_loc_cnt + errors_cnt)
 
         # con_redis.selected_data = [device_id, lng, lat, speed, time]
         if con_redis.select_data(device[0]):
@@ -158,7 +172,7 @@ def insert_last_dev_locations(config, logger):
             inserted_rows_cnt += 1
         else:
             errors_cnt += 1
-    print_progress(inserted_rows_cnt + unchanged_loc_cnt + errors_cnt, len(con_mysql.selected_data))
+    print_progress(inserted_rows_cnt + unchanged_loc_cnt + errors_cnt)
     logger.info("Processing data time: {}.".format(time.time() - start))
     return errors_cnt, inserted_rows_cnt, unchanged_loc_cnt
 
