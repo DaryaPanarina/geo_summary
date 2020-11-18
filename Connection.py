@@ -64,6 +64,7 @@ class ConnectionMysql(Connection):
             raise Exception("'database'")
         if self._table == "-":
             raise Exception("'table'")
+        self._cursor = None
 
     def __del__(self):
         self.close_connection()
@@ -78,17 +79,17 @@ class ConnectionMysql(Connection):
                 passwd=self._password,
                 database=self._database
             )
+            self._cursor = self._connection.cursor(prepared=True)
             return 0
         except Exception as e:
             self._logger.error("Failed to connect to {}. The error occurred: {}.".format(self.dbms, e))
             return -10
 
-    def select_data(self):
-        query = "SELECT device_id FROM {};".format(self._table)
+    def select_data(self, offset):
+        query = "SELECT device_id FROM {} ORDER BY device_id LIMIT %s, 10;".format(self._table)
         try:
-            cursor = self._connection.cursor()
-            cursor.execute(query)
-            self.selected_data = cursor.fetchall()
+            self._cursor.execute(query, (offset,))
+            self.selected_data = self._cursor.fetchall()
             return 0
         except Exception as e:
             self._logger.error("Failed to select data from {}. The error occurred: {}.".format(self.dbms, e))
@@ -114,6 +115,8 @@ class ConnectionOracle(Connection):
         if self._table == "-":
             raise Exception("'table'")
         self._cursor = None
+        self._cursor1 = None
+        self._cursor2 = None
 
     def __del__(self):
         self.close_connection()
@@ -131,13 +134,15 @@ class ConnectionOracle(Connection):
                 password=self._password,
                 dsn=dsn_tns
             )
+
+            self._cursor = self._connection.cursor()
+            query = "SELECT time FROM {} WHERE device=:dev OFFSET 0 ROWS FETCH NEXT 1 ROWS ONLY".format(self._table)
+            self._cursor.prepare(query)
             self._cursor1 = self._connection.cursor()
-            self._cursor1.prefetchrows = 11
-            query = "SELECT device, min(time) time FROM {} GROUP BY device ORDER BY device " \
-                    "OFFSET :off ROWS FETCH NEXT 10 ROWS ONLY".format(self._table)
+            query = "SELECT min(time) time FROM {} WHERE device=:dev".format(self._table)
             self._cursor1.prepare(query)
             self._cursor2 = self._connection.cursor()
-            query = "SELECT device, lng, lat, speed, time FROM {} WHERE device=:dev AND " \
+            query = "SELECT lng, lat, speed FROM {} WHERE device=:dev AND " \
                     "time=TO_TIMESTAMP(:tm, 'DD-MM-YYYY HH24.MI.SS.FF') AND ROWNUM < 2".format(self._table)
             self._cursor2.prepare(query)
             return 0
@@ -145,23 +150,31 @@ class ConnectionOracle(Connection):
             self._logger.error("Failed to connect to {}. The error occurred: {}.".format(self.dbms, e))
             return -10
 
-    def select_data(self, offset, device=0, dev_time=datetime(1970, 1, 1, 0, 0, 0, 0)):
-        if offset != -1:
-            try:
-                self._cursor1.execute(None, off=offset)
-                self.selected_data = self._cursor1.fetchall()
-                return 0
-            except Exception as e:
-                self._logger.error("Failed to select data from {}. The error occurred: {}.".format(self.dbms, e))
-                self.selected_data = None
+    def select_data(self, device):
+        try:
+            self._cursor.execute(None, dev=device)
+            dev_time = self._cursor.fetchall()
+            if len(dev_time) == 0:
+                self._logger.error("Device: {}. Failed to select data from {}.".format(device, self.dbms))
                 return -11
-        else:
-            try:
-                self._cursor2.execute(None, dev=device, tm=dev_time.strftime('%d-%m-%Y %H.%M.%S.%f'))
-                return self._cursor2.fetchall()[0]
-            except Exception as e:
-                self._logger.error("Failed to select data from {}. The error occurred: {}.".format(self.dbms, e))
-                return (-11,)
+            self._cursor1.execute(None, dev=device)
+            dev_time = self._cursor1.fetchall()[0][0]
+            if dev_time is None:
+                self._logger.error("Device: {}. Failed to select data from {}.".format(device, self.dbms))
+                return -11
+            self._cursor2.execute(None, dev=device, tm=dev_time.strftime('%d-%m-%Y %H.%M.%S.%f'))
+            dev_data = self._cursor2.fetchall()[0]
+            if dev_data[2] is None:
+                self.selected_data = (dev_data[0], dev_data[1], 0, datetime.timestamp(dev_time))
+            else:
+                self.selected_data = (dev_data[0], dev_data[1], dev_data[2], datetime.timestamp(dev_time))
+            return 0
+        except Exception as e:
+            self._logger.error("Device: {}. Failed to select data from {}. The error occurred: {}.".format(device,
+                                                                                                           self.dbms,
+                                                                                                           e))
+            self.selected_data = None
+            return -11
 
     def close_connection(self):
         self.selected_data = None
@@ -241,9 +254,9 @@ class ConnectionPostgresql(Connection):
         self.selected_data = None
 
 
-class ConnectionPostgis(Connection):
+class ConnectionOSM(Connection):
     def __init__(self, config_file, logger):
-        self.dbms = "PostGIS"
+        self.dbms = "OSM"
         super().__init__(config_file, logger)
         if self._user == "-":
             raise Exception("'user'")
@@ -365,7 +378,7 @@ class ConnectionRedis(Connection):
     def __del__(self):
         self.close_connection()
 
-    def create_connection(self, host):
+    def create_connection(self, host=None):
         if host is None:
             host = self._host
             self.close_connection()

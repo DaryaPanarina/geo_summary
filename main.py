@@ -1,184 +1,177 @@
 import sys
 import argparse
 import logging
-from datetime import datetime
 import time
 
-import Connection as con
+import Connection as connections
 
 
-# Print iterations progress
+# Connect to databases and TimeZoneServer
+def init_connections(config, logger, mode):
+    con = {}
+    error = 0
+    try:
+        if mode:
+            con['redis'] = connections.ConnectionRedis(config, logger)
+            error = con['redis'].create_connection()
+            if error:
+                return {'error': error}
+
+        con['mysql'] = connections.ConnectionMysql(config, logger)
+        error = con['mysql'].create_connection()
+        if error:
+            return {'error': error}
+        con['oracle'] = connections.ConnectionOracle(config, logger)
+        error = con['oracle'].create_connection()
+        if error:
+            return {'error': error}
+        con['psql'] = connections.ConnectionPostgresql(config, logger)
+        error = con['psql'].create_connection()
+        if error:
+            return {'error': error}
+        con['osm'] = connections.ConnectionOSM(config, logger)
+        error = con['osm'].create_connection()
+        if error:
+            return {'error': error}
+        con['tz'] = connections.ConnectionTimeZoneServer(config, logger)
+        error = con['tz'].create_connection()
+        if error:
+            return {'error': error}
+        return con
+    except Exception as e:
+        logger.critical("Failed to read configuration file. The error occurred: {}.".format(e))
+        return {'error': -10}
+
+
+# Print processing progress
 def print_progress(progress):
     print("Progress: {} devices were processed".format(progress), end="\r")
 
 
-def insert_first_dev_locations(config, logger):
-    # Connect to databases and TimeZoneServer
-    try:
-        con_oracle = con.ConnectionOracle(config, logger)
-        error = con_oracle.create_connection()
-        if error:
-            return (error,)
-        con_psql = con.ConnectionPostgresql(config, logger)
-        error = con_psql.create_connection()
-        if error:
-            return (error,)
-        con_postgis = con.ConnectionPostgis(config, logger)
-        error = con_postgis.create_connection()
-        if error:
-            return (error,)
-        con_tz = con.ConnectionTimeZoneServer(config, logger)
-        error = con_tz.create_connection()
-        if error:
-            return (error,)
-    except Exception as e:
-        logger.critical("Failed to read configuration file. The error occurred: {}.".format(e))
-        return (-10,)
-
-    # Update geo_summary
+# Insert first location of each device in geo_summary
+def insert_first_dev_locations(con):
     cur_offset = 0
     errors_cnt = 0
     inserted_rows_cnt = 0
-    exec_time1 = 0
-    exec_time2 = 0
+    exec_time = 0
     while 1:
         # Print current progress
         print_progress(inserted_rows_cnt + errors_cnt)
 
-        # Select data of the first position for each device
+        # Select list of 10 devices
         start = time.time()
-        con_oracle.select_data(cur_offset)
-        exec_time1 += time.time() - start
-        # if len(con_oracle.selected_data) == 0:
-        if cur_offset == 20:
+        error = con['mysql'].select_data(cur_offset)
+        if error:
+            return (error,)
+        # if len(con['mysql'].selected_data) == 0:
+        if cur_offset == 100:
             break
         cur_offset = cur_offset + 10
 
-        # row = [device, time]
-        for row in con_oracle.selected_data:
-            if row[0] is None:
-                logger.error("Null in device_id")
+        # device = [device_id, ]
+        for device in con['mysql'].selected_data:
+            # Select data of the first location for each device
+            # con['oracle'].selected_data = [lng, lat, speed, time]
+            cur_time = time.time()
+            if con['oracle'].select_data(device[0]):
                 errors_cnt += 1
                 continue
-            # device_data = [device, lng, lat, speed, time]
-            start = time.time()
-            device_data = con_oracle.select_data(-1, row[0], row[1])
-            exec_time2 += time.time() - start
-            if device_data[0] < 0:
+            cur_time = time.time() - cur_time
+
+            # Define timezone and address for each device
+            # args = (lng, lat, ts_utc)
+            if con['tz'].select_data(con['oracle'].selected_data[0], con['oracle'].selected_data[1],
+                                     con['oracle'].selected_data[3]):
+                errors_cnt += 1
+                continue
+            # args = (lng, lat)
+            if con['osm'].select_data(con['oracle'].selected_data[0], con['oracle'].selected_data[1]):
                 errors_cnt += 1
                 continue
 
-            # Define timezone and address for each device
-            if con_tz.select_data(device_data[1], device_data[2], datetime.timestamp(device_data[4])):
+            # Insert new row into geo_summary
+            # args = (device_id, lng, lat, address, speed, last_location_time, timezone_shift)
+            if not con['psql'].insert_data((device[0], con['oracle'].selected_data[0], con['oracle'].selected_data[1],
+                                           con['osm'].selected_data, con['oracle'].selected_data[2],
+                                           con['oracle'].selected_data[3], con['tz'].selected_data)):
+                inserted_rows_cnt += 1
+            else:
+                errors_cnt += 1
+        exec_time += time.time() - start
+
+    logger.info("Average time of one device processing: {}.".format(exec_time / (inserted_rows_cnt + errors_cnt)))
+    print_progress(inserted_rows_cnt + errors_cnt)
+    return errors_cnt, inserted_rows_cnt
+
+# Check last location of each device
+def insert_last_dev_locations(con):
+    cur_offset = 0
+    errors_cnt = 0
+    inserted_rows_cnt = 0
+    unchanged_loc_cnt = 0
+    exec_time = 0
+    while 1:
+        # Print current progress
+        print_progress(inserted_rows_cnt + errors_cnt + unchanged_loc_cnt)
+
+        # Select list of 10 devices
+        start = time.time()
+        error = con['mysql'].select_data(cur_offset)
+        if error:
+            return (error,)
+        if len(con['mysql'].selected_data) == 0:
+        # if cur_offset == 20:
+            break
+        cur_offset = cur_offset + 10
+
+        # device = [device_id, ]
+        for device in con['mysql'].selected_data:
+            # con['redis'].selected_data = [device_id, lng, lat, speed, time]
+            if con['redis'].select_data(device[0]):
                 errors_cnt += 1
                 continue
-            if con_postgis.select_data(device_data[1], device_data[2]):
+            if con['psql'].select_data(device[0]):
+                errors_cnt += 1
+                continue
+
+            # Define device's timezone
+            # args = (lng, lat, ts_utc)
+            if con['tz'].select_data(con['redis'].selected_data[1], con['redis'].selected_data[2],
+                                     con['redis'].selected_data[4]):
+                errors_cnt += 1
+                continue
+
+            # Check if the device's location changed
+            if (len(con['psql'].selected_data) != 0) \
+                    and (((con['redis'].selected_data[1] == con['psql'].selected_data[0][0])
+                          and (con['redis'].selected_data[2] == con['psql'].selected_data[0][1]))
+                         or ((con['redis'].selected_data[4] + con['tz'].selected_data * 3600)
+                             <= con['psql'].selected_data[0][2])):
+                unchanged_loc_cnt += 1
+                continue
+
+            # Define device's address
+            # args = (lng, lat)
+            if con['osm'].select_data(con['redis'].selected_data[1], con['redis'].selected_data[2]):
                 errors_cnt += 1
                 continue
 
             # Insert new row into geo_summary
             # [device_id, lng, lat, address, speed, last_location_time, timezone_shift]
-            speed = device_data[3]
-            if speed is None:
-                speed = 0
-            if not con_psql.insert_data(
-                    (device_data[0], device_data[1], device_data[2], con_postgis.selected_data, speed,
-                     datetime.timestamp(device_data[4]), con_tz.selected_data)):
+            if not con['psql'].insert_data((device[0], con['redis'].selected_data[1], con['redis'].selected_data[2],
+                                            con['osm'].selected_data, con['redis'].selected_data[3],
+                                            con['redis'].selected_data[4], con['tz'].selected_data)):
                 inserted_rows_cnt += 1
             else:
                 errors_cnt += 1
+        exec_time += time.time() - start
 
-    logger.info("Average time of Oracle query execution 1: {}.".format(exec_time1 / (cur_offset / 10)))
-    logger.info("Average time of Oracle query execution 2: {}.".format(exec_time2 / cur_offset))
-    print_progress(inserted_rows_cnt + errors_cnt)
-    return errors_cnt, inserted_rows_cnt
-
-
-def insert_last_dev_locations(config, logger):
-    # Connections to databases and TimeZoneServer
-    try:
-        con_mysql = con.ConnectionMysql(config, logger)
-        error = con_mysql.create_connection()
-        if error:
-            return (error,)
-        con_redis = con.ConnectionRedis(config, logger)
-        error = con_redis.create_connection(None)
-        if error:
-            return (error,)
-        con_psql = con.ConnectionPostgresql(config, logger)
-        error = con_psql.create_connection()
-        if error:
-            return (error,)
-        con_postgis = con.ConnectionPostgis(config, logger)
-        error = con_postgis.create_connection()
-        if error:
-            return (error,)
-        con_tz = con.ConnectionTimeZoneServer(config, logger)
-        error = con_tz.create_connection()
-        if error:
-            return (error,)
-    except Exception as e:
-        logger.critical("Failed to read configuration file. The error occurred: {}.".format(e))
-        return (-10,)
-
-    # Select list of all devices
-    start = time.time()
-    error = con_mysql.select_data()
-    logger.info("MySQL select data. Time: {}.".format(time.time() - start))
-    if error:
-        return (error,)
-
-    # Check last location of each device
-    errors_cnt = 0
-    inserted_rows_cnt = 0
-    unchanged_loc_cnt = 0
-    start = time.time()
-    # device = [device_id, ]
-    for device in con_mysql.selected_data:
-        # Print current progress
-        print_progress(inserted_rows_cnt + unchanged_loc_cnt + errors_cnt)
-
-        # con_redis.selected_data = [device_id, lng, lat, speed, time]
-        if con_redis.select_data(device[0]):
-            errors_cnt += 1
-            continue
-        if con_psql.select_data(device[0]):
-            errors_cnt += 1
-            continue
-
-        # Define device's timezone
-        if con_tz.select_data(con_redis.selected_data[1], con_redis.selected_data[2], con_redis.selected_data[4]):
-            errors_cnt += 1
-            continue
-
-        # Check if the device's location changed
-        if (len(con_psql.selected_data) != 0) and (((con_redis.selected_data[1] == con_psql.selected_data[0][0])
-                                                    and (con_redis.selected_data[2] == con_psql.selected_data[0][1]))
-                                                   or ((con_redis.selected_data[4] + con_tz.selected_data * 3600)
-                                                       <= con_psql.selected_data[0][2])):
-            unchanged_loc_cnt += 1
-            continue
-
-        # Define device's address
-        if con_postgis.select_data(con_redis.selected_data[1], con_redis.selected_data[2]):
-            errors_cnt += 1
-            continue
-
-        # Insert new row into geo_summary
-        # [device_id, lng, lat, address, speed, last_location_time, timezone_shift]
-        if not con_psql.insert_data((device[0], con_redis.selected_data[1], con_redis.selected_data[2],
-                                     con_postgis.selected_data, con_redis.selected_data[3],
-                                     con_redis.selected_data[4], con_tz.selected_data)):
-            inserted_rows_cnt += 1
-        else:
-            errors_cnt += 1
+    logger.info("Average time of one device processing: {}.".format(exec_time / (inserted_rows_cnt + errors_cnt)))
     print_progress(inserted_rows_cnt + unchanged_loc_cnt + errors_cnt)
-    logger.info("Processing data time: {}.".format(time.time() - start))
     return errors_cnt, inserted_rows_cnt, unchanged_loc_cnt
 
 
 if __name__ == '__main__':
-    # starting time
     start = time.time()
 
     # Parsing arguments
@@ -196,15 +189,20 @@ if __name__ == '__main__':
     print("Start")
     if namespace.first:
         logger.info("Insert first devices' locations.")
-        ans = insert_first_dev_locations(namespace.c, logger)
+        con = init_connections(namespace.c, logger, 0)
+        if 'error' in con:
+            print("Failed to connect to database. Details are in geo_summary_error.log.")
+            sys.exit(con['error'])
+        ans = insert_first_dev_locations(con)
     else:
         logger.info("Insert last devices' locations.")
-        ans = insert_last_dev_locations(namespace.c, logger)
+        con = init_connections(namespace.c, logger, 1)
+        if 'error' in con:
+            print("Failed to connect to database. Details are in geo_summary_error.log.")
+            sys.exit(con['error'])
+        ans = insert_last_dev_locations(con)
 
-    if ans[0] == -10:
-        print("Failed to connect to database. Details are in geo_summary_error.log.")
-        sys.exit(ans[0])
-    elif ans[0] == -11:
+    if ans[0] < 0:
         print("Failed to select data from database. Details are in geo_summary_error.log.")
         sys.exit(ans[0])
     else:
@@ -213,7 +211,6 @@ if __name__ == '__main__':
         else:
             ans_str = "Inserted {} rows. {} devices haven't changed their location. " \
                       "{} errors occurred.".format(ans[1], ans[2], ans[0])
-
         logger.info(ans_str)
         print(ans_str)
     time_str = "Runtime of the program is {}.".format(time.time() - start)
