@@ -52,32 +52,28 @@ def print_progress(progress):
 
 # Insert first location of each device in geo_summary
 def insert_first_dev_locations(con, rows_range):
-    cur_offset = rows_range[0]
+    offset = rows_range[0]
+    chunk = 10
     errors_cnt = 0
     inserted_rows_cnt = 0
-    exec_time = 0
     while 1:
         # Print current progress
         print_progress(inserted_rows_cnt + errors_cnt)
 
-        # Select list of 10 devices
-        start = time.time()
-        error = con['mysql'].select_data(cur_offset)
+        # Select list of 10-19 devices
+        if (offset + 2 * chunk) >= rows_range[1]:
+            chunk = rows_range[1] - offset
+        error = con['mysql'].select_data(offset, chunk)
         if error:
             return (error,)
-        if cur_offset >= rows_range[1]:
-            break
-        cur_offset = cur_offset + 10
 
         # device = [device_id, ]
         for device in con['mysql'].selected_data:
             # Select data of the first location for each device
             # con['oracle'].selected_data = [lng, lat, speed, time]
-            cur_time = time.time()
             if con['oracle'].select_data(device[0]):
                 errors_cnt += 1
                 continue
-            cur_time = time.time() - cur_time
 
             # Define timezone and address for each device
             # args = (lng, lat, ts_utc)
@@ -98,9 +94,11 @@ def insert_first_dev_locations(con, rows_range):
                 inserted_rows_cnt += 1
             else:
                 errors_cnt += 1
-        exec_time += time.time() - start
+        offset += chunk
+        if offset == rows_range[1]:
+            break
 
-    logger.info("Average time of one device processing: {}.".format(exec_time / (inserted_rows_cnt + errors_cnt)))
+    print_progress(inserted_rows_cnt + errors_cnt)
     return errors_cnt, inserted_rows_cnt
 
 # Check last location of each device
@@ -120,7 +118,6 @@ def insert_last_dev_locations(con):
         if error:
             return (error,)
         if len(con['mysql'].selected_data) == 0:
-        # if cur_offset == 20:
             break
         cur_offset = cur_offset + 10
 
@@ -197,9 +194,7 @@ if __name__ == '__main__':
         threads_list = list()
 
         for i in range(threads_number):
-            logger_i = logging.getLogger("geo_sum_{}".format(i))
-            logger_i.setLevel('INFO')
-            con = init_connections(namespace.c, logger_i, 0)
+            con = init_connections(namespace.c, logger, 0)
             if 'error' in con:
                 print("Failed to connect to database. Details are in geo_summary_error.log.")
                 sys.exit(con['error'])
@@ -215,7 +210,7 @@ if __name__ == '__main__':
                            args=(que, [con, (i * chunk_size, (i + 1) * chunk_size)]))
             else:
                 t = Thread(target=lambda q, f_args: q.put(insert_first_dev_locations(f_args[0], f_args[1])),
-                           args=(que, [con, (i * chunk_size, (i + 1) * chunk_size + rows_number % threads_number)]))
+                           args=(que, [con, (i * chunk_size, (i + 1) * chunk_size + rows_number % threads_number + 1)]))
             t.start()
             threads_list.append(t)
 
