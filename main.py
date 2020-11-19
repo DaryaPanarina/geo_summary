@@ -2,7 +2,7 @@ import sys
 import argparse
 import logging
 import time
-import threading
+from threading import Thread
 import queue
 
 import Connection as connections
@@ -51,19 +51,21 @@ def print_progress(progress):
 
 
 # Insert first location of each device in geo_summary
-def insert_first_dev_locations(que, con, rows_range):
+def insert_first_dev_locations(con, rows_range):
     offset = rows_range[0]
     chunk = 10
     errors_cnt = 0
     inserted_rows_cnt = 0
     while 1:
+        # Print current progress
+        print_progress(inserted_rows_cnt + errors_cnt)
+
         # Select list of 10-19 devices
         if (offset + 2 * chunk) >= rows_range[1]:
             chunk = rows_range[1] - offset
         error = con['mysql'].select_data(offset, chunk)
         if error:
-            que.put({'error': error})
-            return
+            return (error,)
 
         # device = [device_id, ]
         for device in con['mysql'].selected_data:
@@ -92,12 +94,12 @@ def insert_first_dev_locations(que, con, rows_range):
                 inserted_rows_cnt += 1
             else:
                 errors_cnt += 1
-        # Print current progress
-        que.put({'progress': chunk})
         offset += chunk
         if offset == rows_range[1]:
             break
-    que.put({'finish': (errors_cnt, inserted_rows_cnt)})
+
+    print_progress(inserted_rows_cnt + errors_cnt)
+    return errors_cnt, inserted_rows_cnt
 
 # Check last location of each device
 def insert_last_dev_locations(con):
@@ -204,30 +206,23 @@ if __name__ == '__main__':
                 rows_number = con['mysql'].selected_data[0][0]
                 chunk_size = rows_number // threads_number
             if i + 1 < threads_number:
-                t = threading.Thread(target=insert_first_dev_locations,
-                                     args=(que, con, (i * chunk_size, (i + 1) * chunk_size)), daemon=True)
+                t = Thread(target=lambda q, f_args: q.put(insert_first_dev_locations(f_args[0], f_args[1])),
+                           args=(que, [con, (i * chunk_size, (i + 1) * chunk_size)]))
             else:
-                t = threading.Thread(target=insert_first_dev_locations,
-                                     args=(que, con, (i * chunk_size,
-                                                      (i + 1) * chunk_size + rows_number % threads_number)),
-                                     daemon=True)
+                t = Thread(target=lambda q, f_args: q.put(insert_first_dev_locations(f_args[0], f_args[1])),
+                           args=(que, [con, (i * chunk_size, (i + 1) * chunk_size + rows_number % threads_number + 1)]))
             t.start()
             threads_list.append(t)
 
+        # Join all the threads
+        for t in threads_list:
+            t.join()
+        # Check thread's return value
         cur_ans = [0, 0]
-        progress = 0
-        # while (threading.activeCount() > 1) or (not que.empty()):
-        while (rows_number != progress) or (not que.empty()):
+        while not que.empty():
             result = que.get()
-            if 'finish' in result:
-                cur_ans[0] += result['finish'][0]
-                cur_ans[1] += result['finish'][1]
-            if 'progress' in result:
-                progress += result['progress']
-                print_progress(progress)
-            if 'error' in result:
-                cur_ans[0] = result['error']
-                break
+            cur_ans[0] += result[0]
+            cur_ans[1] += result[1]
         ans = (cur_ans[0], cur_ans[1])
     else:
         logger.info("Insert last devices' locations.")

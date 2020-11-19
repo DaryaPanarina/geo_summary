@@ -349,15 +349,15 @@ class ConnectionOSM(Connection):
             return -11
 
         # Boundaries
-        # query = "SELECT type, name FROM osm_boundaries " \
-        #         "WHERE ST_Within(ST_Transform(ST_GeomFromEWKT('SRID=4326;POINT({} {})'), 3857), geometry) " \
-        #         "AND name<>'' LIMIT 1;".format(lng, lat)
-        # if not self.execute_query(query):
-        #     self.selected_data = json.dumps(self.selected_data)
-        #     return 0
-        # else:
-        #     self._logger.error("Lng: {}, lat: {}. Failed to define device's address.".format(lng, lat))
-        #     return -11
+        query = "SELECT type, name FROM osm_boundaries " \
+                "WHERE ST_Within(ST_Transform(ST_GeomFromEWKT('SRID=4326;POINT({} {})'), 3857), geometry) " \
+                "AND name<>'' LIMIT 1;".format(lng, lat)
+        if not self.execute_query(query):
+            self.selected_data = json.dumps(self.selected_data)
+            return 0
+        else:
+            self._logger.error("Lng: {}, lat: {}. Failed to define device's address.".format(lng, lat))
+            return -11
 
     def close_connection(self):
         if (self._connection is not None) and (not self._connection.closed):
