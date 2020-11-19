@@ -85,10 +85,16 @@ class ConnectionMysql(Connection):
             self._logger.error("Failed to connect to {}. The error occurred: {}.".format(self.dbms, e))
             return -10
 
-    def select_data(self, offset):
-        query = "SELECT device_id FROM {} ORDER BY device_id LIMIT %s, 10;".format(self._table)
+    def select_data(self, offset=-1):
+        if offset != -1:
+            query = "SELECT device_id FROM {} ORDER BY device_id LIMIT %s, 10;".format(self._table)
+        else:
+            query = "SELECT count(device_id) FROM {};".format(self._table)
         try:
-            self._cursor.execute(query, (offset,))
+            if offset != -1:
+                self._cursor.execute(query, (offset,))
+            else:
+                self._cursor.execute(query)
             self.selected_data = self._cursor.fetchall()
             return 0
         except Exception as e:
