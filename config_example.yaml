@@ -22,7 +22,7 @@ Oracle:
  database: value
  table: value
 
-PostGIS:
+OSM:
  host: value
  port: value
  user: value

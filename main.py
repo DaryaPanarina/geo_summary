@@ -46,26 +46,25 @@ def init_connections(config, logger, mode):
 
 
 # Print processing progress
-def print_progress(progress):
-    print("Progress: {} devices were processed".format(progress), end="\r")
+def print_progress(progress, total):
+    percent = "{:.2f}".format((progress / float(total)) * 100)
+    print("Progress: {}% complete".format(percent), end="\r")
 
 
 # Insert first location of each device in geo_summary
-def insert_first_dev_locations(con, rows_range):
+def insert_first_dev_locations(que, con, rows_range):
     offset = rows_range[0]
     chunk = 10
     errors_cnt = 0
     inserted_rows_cnt = 0
     while 1:
-        # Print current progress
-        print_progress(inserted_rows_cnt + errors_cnt)
-
         # Select list of 10-19 devices
         if (offset + 2 * chunk) >= rows_range[1]:
             chunk = rows_range[1] - offset
         error = con['mysql'].select_data(offset, chunk)
         if error:
-            return (error,)
+            que.put({'error': error})
+            return
 
         # device = [device_id, ]
         for device in con['mysql'].selected_data:
@@ -94,12 +93,12 @@ def insert_first_dev_locations(con, rows_range):
                 inserted_rows_cnt += 1
             else:
                 errors_cnt += 1
+        # Print current progress
+        que.put({'progress': chunk})
         offset += chunk
         if offset == rows_range[1]:
             break
-
-    print_progress(inserted_rows_cnt + errors_cnt)
-    return errors_cnt, inserted_rows_cnt
+    que.put({'finish': (errors_cnt, inserted_rows_cnt)})
 
 # Check last location of each device
 def insert_last_dev_locations(con):
@@ -108,26 +107,26 @@ def insert_last_dev_locations(con):
     inserted_rows_cnt = 0
     unchanged_loc_cnt = 0
     exec_time = 0
-    while 1:
+
+    error = con['mysql'].select_data()
+    if error:
+        return (error,)
+    rows_number = con['mysql'].selected_data[0][0]
+    while cur_offset < rows_number:
         # Print current progress
-        print_progress(inserted_rows_cnt + errors_cnt + unchanged_loc_cnt)
+        print_progress(inserted_rows_cnt + errors_cnt + unchanged_loc_cnt, rows_number)
 
         # Select list of 10 devices
         start = time.time()
         error = con['mysql'].select_data(cur_offset)
         if error:
             return (error,)
-        if len(con['mysql'].selected_data) == 0:
-            break
         cur_offset = cur_offset + 10
 
         # device = [device_id, ]
         for device in con['mysql'].selected_data:
             # con['redis'].selected_data = [device_id, lng, lat, speed, time]
             if con['redis'].select_data(device[0]):
-                errors_cnt += 1
-                continue
-            if con['psql'].select_data(device[0]):
                 errors_cnt += 1
                 continue
 
@@ -139,13 +138,14 @@ def insert_last_dev_locations(con):
                 continue
 
             # Check if the device's location changed
-            if (len(con['psql'].selected_data) != 0) \
-                    and (((con['redis'].selected_data[1] == con['psql'].selected_data[0][0])
-                          and (con['redis'].selected_data[2] == con['psql'].selected_data[0][1]))
-                         or ((con['redis'].selected_data[4] + con['tz'].selected_data * 3600)
-                             <= con['psql'].selected_data[0][2])):
-                unchanged_loc_cnt += 1
-                continue
+            if not con['psql'].select_data(device[0]):
+                if (len(con['psql'].selected_data) != 0) \
+                        and (((con['redis'].selected_data[1] == con['psql'].selected_data[0][0])
+                              and (con['redis'].selected_data[2] == con['psql'].selected_data[0][1]))
+                             or ((con['redis'].selected_data[4] + con['tz'].selected_data * 3600)
+                                 <= con['psql'].selected_data[0][2])):
+                    unchanged_loc_cnt += 1
+                    continue
 
             # Define device's address
             # args = (lng, lat)
@@ -164,7 +164,7 @@ def insert_last_dev_locations(con):
         exec_time += time.time() - start
 
     logger.info("Average time of one device processing: {}.".format(exec_time / (inserted_rows_cnt + errors_cnt)))
-    print_progress(inserted_rows_cnt + unchanged_loc_cnt + errors_cnt)
+    print_progress(inserted_rows_cnt + unchanged_loc_cnt + errors_cnt, rows_number)
     return errors_cnt, inserted_rows_cnt, unchanged_loc_cnt
 
 
@@ -184,6 +184,7 @@ if __name__ == '__main__':
     logger.setLevel('INFO')
 
     print("Start")
+    print_progress(0, 100)
     ans = ()
     if namespace.first:
         logger.info("Insert first devices' locations.")
@@ -206,23 +207,29 @@ if __name__ == '__main__':
                 rows_number = con['mysql'].selected_data[0][0]
                 chunk_size = rows_number // threads_number
             if i + 1 < threads_number:
-                t = Thread(target=lambda q, f_args: q.put(insert_first_dev_locations(f_args[0], f_args[1])),
-                           args=(que, [con, (i * chunk_size, (i + 1) * chunk_size)]))
+                t = Thread(target=insert_first_dev_locations,
+                                     args=(que, con, (i * chunk_size, (i + 1) * chunk_size)), daemon=True)
             else:
-                t = Thread(target=lambda q, f_args: q.put(insert_first_dev_locations(f_args[0], f_args[1])),
-                           args=(que, [con, (i * chunk_size, (i + 1) * chunk_size + rows_number % threads_number + 1)]))
+                t = Thread(target=insert_first_dev_locations,
+                                     args=(que, con, (i * chunk_size,
+                                                      (i + 1) * chunk_size + rows_number % threads_number)),
+                                     daemon=True)
             t.start()
             threads_list.append(t)
 
-        # Join all the threads
-        for t in threads_list:
-            t.join()
-        # Check thread's return value
         cur_ans = [0, 0]
-        while not que.empty():
+        progress = 0
+        while (rows_number != progress) or (cur_ans[0] + cur_ans[1] != progress):
             result = que.get()
-            cur_ans[0] += result[0]
-            cur_ans[1] += result[1]
+            if 'finish' in result:
+                cur_ans[0] += result['finish'][0]
+                cur_ans[1] += result['finish'][1]
+            if 'progress' in result:
+                progress += result['progress']
+                print_progress(progress, rows_number)
+            if 'error' in result:
+                cur_ans[0] = result['error']
+                break
         ans = (cur_ans[0], cur_ans[1])
     else:
         logger.info("Insert last devices' locations.")
