@@ -233,6 +233,7 @@ class ConnectionPostgresql(Connection):
             cursor = self._connection.cursor()
             cursor.execute(query)
             self.selected_data = cursor.fetchall()
+            cursor.close()
             return 0
         except Exception as e:
             self._logger.error("Device: {}. Failed to select data from {}. The error occurred: {}.".format(device_id,
@@ -248,6 +249,7 @@ class ConnectionPostgresql(Connection):
         try:
             cursor = self._connection.cursor()
             cursor.execute(query, values)
+            cursor.close()
             return 0
         except Exception as e:
             self._logger.error("Device: {}. Failed to insert new row into geo_summary. "
@@ -370,6 +372,7 @@ class ConnectionOSM(Connection):
             cursor.execute(query)
             cursor_data = cursor.fetchall()
             self.selected_data = dict((cursor.description[i][0], value) for i, value in enumerate(cursor_data[0]))
+            cursor.close()
             return 0
         except Exception:
             self.selected_data = None
