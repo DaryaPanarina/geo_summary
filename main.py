@@ -117,7 +117,6 @@ def insert_last_dev_locations(con):
         print_progress(inserted_rows_cnt + errors_cnt + unchanged_loc_cnt, rows_number)
 
         # Select list of 10 devices
-        start = time.time()
         error = con['mysql'].select_data(cur_offset)
         if error:
             return (error,)
@@ -125,6 +124,8 @@ def insert_last_dev_locations(con):
 
         # device = [device_id, ]
         for device in con['mysql'].selected_data:
+            start_time = time.time()
+
             # con['redis'].selected_data = [device_id, lng, lat, speed, time]
             if con['redis'].select_data(device[0]):
                 errors_cnt += 1
@@ -159,17 +160,18 @@ def insert_last_dev_locations(con):
                                             con['osm'].selected_data, con['redis'].selected_data[3],
                                             con['redis'].selected_data[4], con['tz'].selected_data)):
                 inserted_rows_cnt += 1
+                exec_time += time.time() - start_time
             else:
                 errors_cnt += 1
-        exec_time += time.time() - start
 
-    logger.info("Average time of one device processing: {}.".format(exec_time / (inserted_rows_cnt + errors_cnt)))
+    if inserted_rows_cnt > 0:
+        logger.info("Average time of one device processing: {}.".format(exec_time / inserted_rows_cnt))
     print_progress(inserted_rows_cnt + unchanged_loc_cnt + errors_cnt, rows_number)
     return errors_cnt, inserted_rows_cnt, unchanged_loc_cnt
 
 
 if __name__ == '__main__':
-    start = time.time()
+    start_time = time.time()
 
     # Parsing arguments
     parser = argparse.ArgumentParser()
@@ -250,6 +252,6 @@ if __name__ == '__main__':
                       "{} errors occurred.".format(ans[1], ans[2], ans[0])
         logger.info(ans_str)
         print(ans_str)
-    time_str = "Runtime of the program is {}.".format(time.time() - start)
+    time_str = "Runtime of the program is {}.".format(time.time() - start_time)
     logger.info(time_str)
     print(time_str)
