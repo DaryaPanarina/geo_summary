@@ -9,11 +9,16 @@ import Connection as connections
 
 
 # Connect to databases and TimeZoneServer
-def init_connections(config, logger, mode):
+def init_connections(config, logger, isFirst):
     con = {}
     error = 0
     try:
-        if mode:
+        if isFirst:
+            con['oracle'] = connections.ConnectionOracle(config, logger)
+            error = con['oracle'].create_connection()
+            if error:
+                return {'error': error}
+        else:
             con['redis'] = connections.ConnectionRedis(config, logger)
             error = con['redis'].create_connection()
             if error:
@@ -21,10 +26,6 @@ def init_connections(config, logger, mode):
 
         con['mysql'] = connections.ConnectionMysql(config, logger)
         error = con['mysql'].create_connection()
-        if error:
-            return {'error': error}
-        con['oracle'] = connections.ConnectionOracle(config, logger)
-        error = con['oracle'].create_connection()
         if error:
             return {'error': error}
         con['psql'] = connections.ConnectionPostgresql(config, logger)
@@ -98,34 +99,26 @@ def insert_first_dev_locations(que, con, rows_range):
         offset += chunk
         if offset == rows_range[1]:
             break
-    que.put({'finish': (errors_cnt, inserted_rows_cnt)})
+    que.put({'finish': (errors_cnt, inserted_rows_cnt, 0)})
 
 # Check last location of each device
-def insert_last_dev_locations(con):
-    cur_offset = 0
+def insert_last_dev_locations(que, con, rows_range):
+    offset = rows_range[0]
+    chunk = 10
     errors_cnt = 0
     inserted_rows_cnt = 0
     unchanged_loc_cnt = 0
-    exec_time = 0
-
-    error = con['mysql'].select_data()
-    if error:
-        return (error,)
-    rows_number = con['mysql'].selected_data[0][0]
-    while cur_offset < rows_number:
-        # Print current progress
-        print_progress(inserted_rows_cnt + errors_cnt + unchanged_loc_cnt, rows_number)
-
-        # Select list of 10 devices
-        error = con['mysql'].select_data(cur_offset)
+    while 1:
+        # Select list of 10-19 devices
+        if (offset + 2 * chunk) >= rows_range[1]:
+            chunk = rows_range[1] - offset
+        error = con['mysql'].select_data(offset, chunk)
         if error:
-            return (error,)
-        cur_offset = cur_offset + 10
+            que.put({'error': error})
+            return
 
         # device = [device_id, ]
         for device in con['mysql'].selected_data:
-            start_time = time.time()
-
             # con['redis'].selected_data = [device_id, lng, lat, speed, time]
             if con['redis'].select_data(device[0]):
                 errors_cnt += 1
@@ -160,14 +153,15 @@ def insert_last_dev_locations(con):
                                             con['osm'].selected_data, con['redis'].selected_data[3],
                                             con['redis'].selected_data[4], con['tz'].selected_data)):
                 inserted_rows_cnt += 1
-                exec_time += time.time() - start_time
             else:
                 errors_cnt += 1
 
-    if inserted_rows_cnt > 0:
-        logger.info("Average time of one device processing: {}.".format(exec_time / inserted_rows_cnt))
-    print_progress(inserted_rows_cnt + unchanged_loc_cnt + errors_cnt, rows_number)
-    return errors_cnt, inserted_rows_cnt, unchanged_loc_cnt
+        # Print current progress
+        que.put({'progress': chunk})
+        offset += chunk
+        if offset == rows_range[1]:
+            break
+    que.put({'finish': (errors_cnt, inserted_rows_cnt, unchanged_loc_cnt)})
 
 
 if __name__ == '__main__':
@@ -187,59 +181,65 @@ if __name__ == '__main__':
 
     print("Start")
     print_progress(0, 100)
-    ans = ()
+
     if namespace.first:
         logger.info("Insert first devices' locations.")
-        rows_number = 0
-        threads_number = 15
-        chunk_size = 0
-        que = queue.Queue()
-        threads_list = list()
-
-        for i in range(threads_number):
-            con = init_connections(namespace.c, logger, 0)
-            if 'error' in con:
-                print("Failed to connect to database. Details are in geo_summary_error.log.")
-                sys.exit(con['error'])
-            if i == 0:
-                error = con['mysql'].select_data()
-                if error:
-                    print("Failed to select data from database. Details are in geo_summary_error.log.")
-                    sys.exit(error)
-                rows_number = con['mysql'].selected_data[0][0]
-                chunk_size = rows_number // threads_number
-            if i + 1 < threads_number:
-                t = Thread(target=insert_first_dev_locations,
-                                     args=(que, con, (i * chunk_size, (i + 1) * chunk_size)), daemon=True)
-            else:
-                t = Thread(target=insert_first_dev_locations,
-                                     args=(que, con, (i * chunk_size,
-                                                      (i + 1) * chunk_size + rows_number % threads_number)),
-                                     daemon=True)
-            t.start()
-            threads_list.append(t)
-
-        cur_ans = [0, 0]
-        progress = 0
-        while (rows_number != progress) or (cur_ans[0] + cur_ans[1] != progress):
-            result = que.get()
-            if 'finish' in result:
-                cur_ans[0] += result['finish'][0]
-                cur_ans[1] += result['finish'][1]
-            if 'progress' in result:
-                progress += result['progress']
-                print_progress(progress, rows_number)
-            if 'error' in result:
-                cur_ans[0] = result['error']
-                break
-        ans = (cur_ans[0], cur_ans[1])
     else:
         logger.info("Insert last devices' locations.")
-        con = init_connections(namespace.c, logger, 1)
+
+    rows_number = 0
+    threads_number = 15
+    chunk_size = 0
+    que = queue.Queue()
+    threads_list = list()
+
+    for i in range(threads_number):
+        con = init_connections(namespace.c, logger, namespace.first)
+
         if 'error' in con:
             print("Failed to connect to database. Details are in geo_summary_error.log.")
             sys.exit(con['error'])
-        ans = insert_last_dev_locations(con)
+        if i == 0:
+            error = con['mysql'].select_data()
+            if error:
+                print("Failed to select data from database. Details are in geo_summary_error.log.")
+                sys.exit(error)
+            rows_number = con['mysql'].selected_data[0][0]
+            chunk_size = rows_number // threads_number
+
+        if namespace.first:
+            if i + 1 < threads_number:
+                t = Thread(target=insert_first_dev_locations,
+                           args=(que, con, (i * chunk_size, (i + 1) * chunk_size)), daemon=True)
+            else:
+                t = Thread(target=insert_first_dev_locations,
+                           args=(que, con, (i * chunk_size, (i + 1) * chunk_size + rows_number % threads_number)),
+                           daemon=True)
+        else:
+            if i + 1 < threads_number:
+                t = Thread(target=insert_last_dev_locations,
+                           args=(que, con, (i * chunk_size, (i + 1) * chunk_size)), daemon=True)
+            else:
+                t = Thread(target=insert_last_dev_locations,
+                           args=(que, con, (i * chunk_size, (i + 1) * chunk_size + rows_number % threads_number)),
+                           daemon=True)
+        t.start()
+        threads_list.append(t)
+
+    progress = 0
+    ans = [0, 0, 0]
+    while (rows_number != progress) or (ans[0] + ans[1] + ans[2] != progress):
+        result = que.get()
+        if 'finish' in result:
+            ans[0] += result['finish'][0]
+            ans[1] += result['finish'][1]
+            ans[2] += result['finish'][2]
+        if 'progress' in result:
+            progress += result['progress']
+            print_progress(progress, rows_number)
+        if 'error' in result:
+            ans[0] = result['error']
+            break
 
     if ans[0] < 0:
         print("Failed to select data from database. Details are in geo_summary_error.log.")
