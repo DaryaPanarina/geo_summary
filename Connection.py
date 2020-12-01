@@ -226,9 +226,8 @@ class ConnectionPostgresql(Connection):
     def select_data(self, device_id):
         query = "SELECT ST_X(last_location) lng, ST_Y(last_location) lat, " \
                 "cast(extract(epoch FROM last_location_time) as bigint) last_location_time " \
-                "FROM {} WHERE device_id={} AND " \
-                "check_time=(SELECT max(check_time) FROM {} WHERE device_id={});".format(self._table, device_id,
-                                                                                         self._table, device_id)
+                "FROM {} WHERE device_id={} ORDER BY check_time DESC LIMIT 1;".format(self._table, device_id,
+                                                                                      self._table, device_id)
         try:
             cursor = self._connection.cursor()
             cursor.execute(query)
@@ -416,8 +415,8 @@ class ConnectionRedis(Connection):
         # Get IP of database where the device last position is stored
         name = "device:" + str(device_id) + ":connection_info"
         try:
-            redis_ip = self._connection[self._host].hmget(name, "redis_ip")
-            if (len(redis_ip) != 1) or (redis_ip[0] is None):
+            redis_ip = self._connection[self._host].hget(name, "redis_ip")
+            if redis_ip is None:
                 self._logger.error("Device: {}. Failed to select data from {}.".format(device_id, self.dbms))
                 return -13
         except Exception as e:
@@ -427,7 +426,7 @@ class ConnectionRedis(Connection):
             return -11
 
         # Get or create new connection to Redis
-        redis_ip = str(redis_ip[0], 'utf-8')
+        redis_ip = str(redis_ip, 'utf-8')
         if not (redis_ip in self._connection):
             error = self.create_connection(redis_ip)
             if error:
