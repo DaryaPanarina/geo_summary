@@ -56,10 +56,16 @@
 ## Алгоритм работы скрипта
 ![](https://github.com/DaryaPanarina/geo_summary/raw/master/Algorithm.jpg)
 
+
+
 Алгоритм функции определения первого местоположения устройств:
+
 ![](https://github.com/DaryaPanarina/geo_summary/raw/master/First_loc_check_algorithm.jpg)
 
+
+
 Алгоритм функции определения последнего местоположения устройств:
+
 ![](https://github.com/DaryaPanarina/geo_summary/raw/master/Last_loc_check_algorithm.jpg)
 
 ## Содержимое репозитория
