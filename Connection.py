@@ -226,8 +226,7 @@ class ConnectionPostgresql(Connection):
     def select_data(self, device_id):
         query = "SELECT ST_X(last_location) lng, ST_Y(last_location) lat, " \
                 "cast(extract(epoch FROM last_location_time) as bigint) last_location_time " \
-                "FROM {} WHERE device_id={} ORDER BY check_time DESC LIMIT 1;".format(self._table, device_id,
-                                                                                      self._table, device_id)
+                "FROM {} WHERE device_id={} ORDER BY check_time DESC LIMIT 1;".format(self._table, device_id)
         try:
             cursor = self._connection.cursor()
             cursor.execute(query)
@@ -348,8 +347,8 @@ class ConnectionOSM(Connection):
 
         # Cities
         query = "SELECT country, type, name as nearest_city FROM osm_cities WHERE name<>'' " \
-                "ORDER BY ST_Distance(ST_Transform(ST_GeomFromEWKT('SRID=4326;POINT({} {})'), 3857), geometry) " \
-                "LIMIT 1;".format(lng, lat, lng, lat)
+                "ORDER BY ST_Distance(ST_Transform(ST_GeomFromEWKT('SRID=4326;POINT({} {})'), 3857), geometry) * COSD({}) " \
+                "LIMIT 1;".format(lng, lat, lat)
 
         if not self.execute_query(query):
             self.selected_data = json.dumps(self.selected_data)
