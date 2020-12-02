@@ -179,13 +179,14 @@ if __name__ == '__main__':
     logger = logging.getLogger("geo_sum_main")
     logger.setLevel('INFO')
 
-    print("Start")
-    print_progress(0, 100)
 
     if namespace.first:
+        print("Insert first devices' locations.")
         logger.info("Insert first devices' locations.")
     else:
+        print("Insert last devices' locations.")
         logger.info("Insert last devices' locations.")
+    print_progress(0, 100)
 
     rows_number = 0
     threads_number = 15
@@ -252,6 +253,6 @@ if __name__ == '__main__':
                       "{} errors occurred.".format(ans[1], ans[2], ans[0])
         logger.info(ans_str)
         print(ans_str)
-    time_str = "Runtime of the program is {}.".format(time.time() - start_time)
+    time_str = "Runtime of the program is {:.3f} hours.".format((time.time() - start_time) / 3600)
     logger.info(time_str)
     print(time_str)

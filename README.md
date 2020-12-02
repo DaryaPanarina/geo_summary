@@ -16,18 +16,51 @@
 
 Результаты работы скрипта сохраняются в таблицу geo_summary базы данных PostgreSQL. Структура таблицы geo_summary приведена в файле "Geo_summary_table".
 
-## Алгоритм работы скрипта
-![](https://github.com/DaryaPanarina/geo_summary/raw/master/Algorithm.jpg)
-
 ## Запуск скрипта
 
 `python3 main.py [-c path] [-f] [-h]`
 
-`-c path`		Путь к конфигурационному файлу. Шаблон конфигурационного файла представлен в файле "config_example.yaml".
+`-c path`	Путь к конфигурационному файлу. Шаблон конфигурационного файла представлен в файле "config_example.yaml".
 
 `-f, --first`	Если ключ указан, то для каждого устройства скрипт определит адрес его первого местоположения, если не указан - то будет определяться адрес последнего местоположения для каждого устройства.
 
 `-h, --help`	Справка.
+
+## Сообщения в командной строке
+
+При запуске скрипта:
+- `Insert first devices' locations.` - если скрипт был запущен с ключом -f.
+- `Insert last devices' locations.` - если скрипт был запущен без ключа -f.
+
+Во время работы скрипта:
+
+- `Progress: {X}% complete`
+
+При завершении скрипта:
+- `Inserted {X} rows. {Y} errors occurred.` - если скрипт был запущен с ключом -f.
+- `Inserted {X} rows. {Y} devices haven't changed their location. {Z} errors occurred.` - если скрипт был запущен без ключа -f.
+- `Runtime of the program is {X} hours.`
+
+В случае возникновения ошибки, из-за которой дальнейшая работа скрипта невозможна:
+- `Failed to read configuration file. The error occurred: {X}`
+- `Failed to connect to database. Details are in geo_summary_error.log.`
+- `Failed to select data from database. Details are in geo_summary_error.log.`
+
+## Журнал ошибок
+
+Если во время работы скрипта возникает ошибка, информация о ней записывается в файл `geo_summary_error.log`. Записи в файле могут быть 2 типов:
+
+- `[INFO]	message`, где `message` - сообщение о начале работы скрипта или его корректном завершении, аналогичные сообщениям в командной строке.
+- `[ERROR]	message`, где `message` - информация о возникшей ошибке.
+
+## Алгоритм работы скрипта
+![](https://github.com/DaryaPanarina/geo_summary/raw/master/Algorithm.jpg)
+
+Алгоритм функции определения первого местоположения устройств:
+![](https://github.com/DaryaPanarina/geo_summary/raw/master/First_loc_check_algorithm.jpg)
+
+Алгоритм функции определения последнего местоположения устройств:
+![](https://github.com/DaryaPanarina/geo_summary/raw/master/Last_loc_check_algorithm.jpg)
 
 ## Содержимое репозитория
 
