@@ -297,7 +297,7 @@ class ConnectionOSM(Connection):
 
         error = self.execute_query(query)
         if (not error) and (self.selected_data['city']):
-            self.selected_data = json.dumps(self.selected_data)
+            self.selected_data = json.dumps(self.selected_data, sort_keys=True)
             return 0
         address = None
         if (not error) and (not self.selected_data['city']):
@@ -313,10 +313,10 @@ class ConnectionOSM(Connection):
             address['city'] = self.selected_data['city']
             if not address['postcode']:
                 address['postcode'] = self.selected_data['postcode']
-            self.selected_data = json.dumps(address)
+            self.selected_data = json.dumps(address, sort_keys=True)
             return 0
         if error and not (address is None):
-            self.selected_data = json.dumps(address)
+            self.selected_data = json.dumps(address, sort_keys=True)
             return 0
         if not error:
             address = self.selected_data
@@ -328,7 +328,7 @@ class ConnectionOSM(Connection):
         if not self.execute_query(query):
             if not (address is None):
                 self.selected_data['city'] = address['city']
-            self.selected_data = json.dumps(self.selected_data)
+            self.selected_data = json.dumps(self.selected_data, sort_keys=True)
             return 0
 
         # Water
@@ -338,35 +338,24 @@ class ConnectionOSM(Connection):
         if not self.execute_query(query):
             if not (address is None):
                 self.selected_data['city'] = address['city']
-            self.selected_data = json.dumps(self.selected_data)
+            self.selected_data = json.dumps(self.selected_data, sort_keys=True)
             return 0
 
         if not (address is None):
-            self.selected_data = json.dumps(address)
+            self.selected_data = json.dumps(address, sort_keys=True)
             return 0
 
-        # Cities
+        # Nearest city
         query = "SELECT country, type, name as nearest_city FROM osm_cities WHERE name<>'' " \
-                "ORDER BY ST_Distance(ST_Transform(ST_GeomFromEWKT('SRID=4326;POINT({} {})'), 3857), geometry) * COSD({}) " \
-                "LIMIT 1;".format(lng, lat, lat)
+                "ORDER BY ST_Distance(ST_Transform(ST_GeomFromEWKT('SRID=4326;POINT({} {})'), 3857), geometry) " \
+                "* COSD({}) LIMIT 1;".format(lng, lat, lat)
 
         if not self.execute_query(query):
-            self.selected_data = json.dumps(self.selected_data)
+            self.selected_data = json.dumps(self.selected_data, sort_keys=True)
             return 0
         else:
             self._logger.error("Lng: {}, lat: {}. Failed to define device's address.".format(lng, lat))
             return -11
-
-        # Boundaries
-        # query = "SELECT type, name FROM osm_boundaries " \
-        #         "WHERE ST_Within(ST_Transform(ST_GeomFromEWKT('SRID=4326;POINT({} {})'), 3857), geometry) " \
-        #         "AND name<>'' LIMIT 1;".format(lng, lat)
-        # if not self.execute_query(query):
-        #     self.selected_data = json.dumps(self.selected_data)
-        #     return 0
-        # else:
-        #     self._logger.error("Lng: {}, lat: {}. Failed to define device's address.".format(lng, lat))
-        #     return -11
 
     def close_connection(self):
         if (self._connection is not None) and (not self._connection.closed):
@@ -457,8 +446,11 @@ class ConnectionRedis(Connection):
         self.selected_data = None
         try:
             for i in self._connection.values():
-                i.ping()
-                i.close()
+                try:
+                    i.ping()
+                    i.close()
+                except Exception:
+                    continue
             self._connection.clear()
         except Exception:
             return

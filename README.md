@@ -28,20 +28,20 @@
 
 ## Сообщения в командной строке
 
-При запуске скрипта:
+При запуске скрипта выводится сообщение о выбранном режиме работы скрипта:
 - `Insert first devices' locations.` - если скрипт был запущен с ключом -f.
 - `Insert last devices' locations.` - если скрипт был запущен без ключа -f.
 
-Во время работы скрипта:
+Во время работы скрипта отображается процент обработанных устройств:
 
 - `Progress: {X}% complete`
 
-При завершении скрипта:
+При корректном завершении скрипта отображается количество новых записей в таблице geo_summary, количество возникших при обработке некритических ошибок, а также время работы скрипта:
 - `Inserted {X} rows. {Y} errors occurred.` - если скрипт был запущен с ключом -f.
 - `Inserted {X} rows. {Y} devices haven't changed their location. {Z} errors occurred.` - если скрипт был запущен без ключа -f.
 - `Runtime of the program is {X} hours.`
 
-В случае возникновения ошибки, из-за которой дальнейшая работа скрипта невозможна:
+В случае возникновения ошибки, из-за которой дальнейшая работа скрипта невозможна, будет выведено соответствующие ошибке сообщение:
 - `Failed to read configuration file. The error occurred: {X}`
 - `Failed to connect to database. Details are in geo_summary_error.log.`
 - `Failed to select data from database. Details are in geo_summary_error.log.`

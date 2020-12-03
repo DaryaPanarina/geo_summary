@@ -75,12 +75,14 @@ def insert_first_dev_locations(que, con, rows_range):
                 errors_cnt += 1
                 continue
 
-            # Define timezone and address for each device
+            # Define device's timezone
             # args = (lng, lat, ts_utc)
             if con['tz'].select_data(con['oracle'].selected_data[0], con['oracle'].selected_data[1],
                                      con['oracle'].selected_data[3]):
                 errors_cnt += 1
                 continue
+
+            # Define device's address
             # args = (lng, lat)
             if con['osm'].select_data(con['oracle'].selected_data[0], con['oracle'].selected_data[1]):
                 errors_cnt += 1
@@ -124,22 +126,21 @@ def insert_last_dev_locations(que, con, rows_range):
                 errors_cnt += 1
                 continue
 
+            # Check if the device's location changed
+            if not con['psql'].select_data(device[0]):
+                if (len(con['psql'].selected_data) != 0) \
+                        and (((con['redis'].selected_data[1] == con['psql'].selected_data[0][0])
+                              and (con['redis'].selected_data[2] == con['psql'].selected_data[0][1]))
+                             or (con['redis'].selected_data[4] <= con['psql'].selected_data[0][2])):
+                    unchanged_loc_cnt += 1
+                    continue
+
             # Define device's timezone
             # args = (lng, lat, ts_utc)
             if con['tz'].select_data(con['redis'].selected_data[1], con['redis'].selected_data[2],
                                      con['redis'].selected_data[4]):
                 errors_cnt += 1
                 continue
-
-            # Check if the device's location changed
-            if not con['psql'].select_data(device[0]):
-                if (len(con['psql'].selected_data) != 0) \
-                        and (((con['redis'].selected_data[1] == con['psql'].selected_data[0][0])
-                              and (con['redis'].selected_data[2] == con['psql'].selected_data[0][1]))
-                             or ((con['redis'].selected_data[4] + con['tz'].selected_data * 3600)
-                                 <= con['psql'].selected_data[0][2])):
-                    unchanged_loc_cnt += 1
-                    continue
 
             # Define device's address
             # args = (lng, lat)
