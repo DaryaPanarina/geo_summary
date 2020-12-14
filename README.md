@@ -41,17 +41,18 @@
 - `Inserted {X} rows. {Y} devices haven't changed their location. {Z} errors occurred.` - если скрипт был запущен без ключа -f.
 - `Runtime of the program is {X} hours.`
 
-В случае возникновения ошибки, из-за которой дальнейшая работа скрипта невозможна, будет выведено соответствующие ошибке сообщение:
+В случае возникновения ошибки, из-за которой дальнейшая работа скрипта невозможна, будет выведено соответствующее ошибке сообщение:
 - `Failed to read configuration file. The error occurred: {X}`
 - `Failed to connect to database. Details are in geo_summary_error.log.`
 - `Failed to select data from database. Details are in geo_summary_error.log.`
 
 ## Журнал ошибок
 
-Если во время работы скрипта возникает ошибка, информация о ней записывается в файл `geo_summary_error.log`. Записи в файле могут быть 2 типов:
+Если во время работы скрипта возникает ошибка, информация о ней записывается в файл `geo_summary_error.log`. Записи в файле могут быть 3 типов:
 
 - `[INFO]	message`, где `message` - сообщение о начале работы скрипта или его корректном завершении, аналогичные сообщениям в командной строке.
 - `[ERROR]	message`, где `message` - информация о возникшей ошибке.
+- `[CRITICAL]	message`, где `message` - информация о возникшей ошибке, из-за которой выполнение скрипта было остановлено.
 
 ## Алгоритм работы скрипта
 ![](https://github.com/DaryaPanarina/geo_summary/raw/master/Algorithm.jpg)
@@ -71,13 +72,14 @@
 ## Содержимое репозитория
 
 1. Исходный код скрипта: `main.py`, `Connection.py`.
-2. Описание таблицы geo_summary: `Geo_summary_table`.
-3. Пример конфигурационного файла: `config_example.yaml`.
-4. Protobuf-структура данных, получаемых из Redis: `gps_data.proto`.
+2. SQL-описание таблицы geo_summary: `Geo_summary_table.md`.
+3. Примеры SQL-запросов к таблице geo_summary: `Select_queries.md`.
+4. Пример конфигурационного файла: `config_example.yaml`.
+5. Protobuf-структура данных, получаемых из Redis: `gps_data.proto`.
 	
   Генерация класса для работы с данными из Protobuf:
   
   `protoc -I=$SRC_DIR --python_out=$DST_DIR $SRC_DIR/gps_data.proto`
   
-5. Используемые в скрипте модули: `requirements.txt`.
-6. README.
+6. Используемые в скрипте модули: `requirements.txt`.
+7. README.
