@@ -1,5 +1,16 @@
-database: geo_sum
-schema: geo_sum_update
+```sql
+CREATE USER geo_sum_update WITH PASSWORD 'password';
+
+
+CREATE DATABASE geo_sum 
+WITH OWNER "geo_sum_update" 
+ENCODING 'UTF8' 
+LC_COLLATE = 'en_US.UTF-8' 
+LC_CTYPE = 'en_US.UTF-8';
+
+
+CREATE SCHEMA geo_sum_update;
+
 
 CREATE TABLE geo_sum_update.geo_summary (
 	uid bigserial PRIMARY KEY,
@@ -11,3 +22,4 @@ CREATE TABLE geo_sum_update.geo_summary (
 	check_time timestamp(6) NOT NULL DEFAULT now(),
 	timezone_shift numeric(4, 2) NOT NULL
 );
+```
