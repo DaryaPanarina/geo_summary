@@ -367,10 +367,16 @@ class ConnectionOSM(Connection):
             cursor = self._connection.cursor()
             cursor.execute(query)
             cursor_data = cursor.fetchall()
+            if (len(cursor_data) != 1) or (cursor_data[0] is None):
+                cursor.close()
+                self.selected_data = None
+                return -11
             self.selected_data = dict((cursor.description[i][0], value) for i, value in enumerate(cursor_data[0]))
             cursor.close()
             return 0
-        except Exception:
+        except Exception as e:
+            cursor.close()
+            self._logger.error("The error occurred while defining device's address: {}".format(e))
             self.selected_data = None
             return -11
 
@@ -405,7 +411,8 @@ class ConnectionRedis(Connection):
         try:
             redis_ip = self._connection[self._host].hget(name, "redis_ip")
             if redis_ip is None:
-                self._logger.error("Device: {}. Failed to select data from {}.".format(device_id, self.dbms))
+                self._logger.error("Device: {}. Failed to select database address from {}.".format(device_id,
+                                                                                                   self.dbms))
                 return -13
         except Exception as e:
             self._logger.error("Device: {}. Failed to select data from {}. The error occurred: {}.".format(
@@ -425,7 +432,8 @@ class ConnectionRedis(Connection):
         try:
             data = self._connection[redis_ip].hmget(name, ["data"])
             if (len(data) != 1) or (data[0] is None):
-                self._logger.error("Device: {}. Failed to select data from {}.".format(device_id, self.dbms))
+                self._logger.error("Device: {}. Failed to select last position of the device "
+                                   "from {}.".format(device_id, self.dbms))
                 return -13
 
             gps_str = base64.b64decode(data[0].decode("utf-8"))

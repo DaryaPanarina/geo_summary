@@ -58,6 +58,7 @@ def insert_first_dev_locations(que, con, rows_range):
     chunk = 10
     errors_cnt = 0
     inserted_rows_cnt = 0
+    max_time = 0
     while 1:
         # Select list of 10-19 devices
         if (offset + 2 * chunk) >= rows_range[1]:
@@ -90,17 +91,22 @@ def insert_first_dev_locations(que, con, rows_range):
 
             # Insert new row into geo_summary
             # args = (device_id, lng, lat, address, speed, last_location_time, timezone_shift)
+            start_time = time.time()
             if not con['psql'].insert_data((device[0], con['oracle'].selected_data[0], con['oracle'].selected_data[1],
                                            con['osm'].selected_data, con['oracle'].selected_data[2],
                                            con['oracle'].selected_data[3], con['tz'].selected_data)):
                 inserted_rows_cnt += 1
             else:
                 errors_cnt += 1
+            cur_time = time.time() - start_time
+            if cur_time > max_time:
+                max_time = cur_time
         # Print current progress
         que.put({'progress': chunk})
         offset += chunk
         if offset == rows_range[1]:
             break
+    logger.info("Max processing time of one device: {}".format(max_time))
     que.put({'finish': (errors_cnt, inserted_rows_cnt, 0)})
 
 # Check last location of each device
@@ -110,6 +116,8 @@ def insert_last_dev_locations(que, con, rows_range):
     errors_cnt = 0
     inserted_rows_cnt = 0
     unchanged_loc_cnt = 0
+    max_time = 0
+
     while 1:
         # Select list of 10-19 devices
         if (offset + 2 * chunk) >= rows_range[1]:
@@ -121,6 +129,7 @@ def insert_last_dev_locations(que, con, rows_range):
 
         # device = [device_id, ]
         for device in con['mysql'].selected_data:
+            start_time = time.time()
             # con['redis'].selected_data = [device_id, lng, lat, speed, time]
             if con['redis'].select_data(device[0]):
                 errors_cnt += 1
@@ -156,12 +165,16 @@ def insert_last_dev_locations(que, con, rows_range):
                 inserted_rows_cnt += 1
             else:
                 errors_cnt += 1
+            cur_time = time.time() - start_time
+            if cur_time > max_time:
+                max_time = cur_time
 
         # Print current progress
         que.put({'progress': chunk})
         offset += chunk
         if offset == rows_range[1]:
             break
+        logger.info("Max processing time of one device: {}".format(max_time))
     que.put({'finish': (errors_cnt, inserted_rows_cnt, unchanged_loc_cnt)})
 
 
