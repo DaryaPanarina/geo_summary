@@ -68,11 +68,10 @@ def insert_first_dev_locations(que, con, rows_range):
             que.put({'error': error})
             return
 
-        # device = [device_id, ]
         for device in con['mysql'].selected_data:
             # Select data of the first location for each device
             # con['oracle'].selected_data = [lng, lat, speed, time]
-            if con['oracle'].select_data(device[0]):
+            if con['oracle'].select_data(device):
                 errors_cnt += 1
                 continue
 
@@ -92,7 +91,7 @@ def insert_first_dev_locations(que, con, rows_range):
             # Insert new row into geo_summary
             # args = (device_id, lng, lat, address, speed, last_location_time, timezone_shift)
             start_time = time.time()
-            if not con['psql'].insert_data((device[0], con['oracle'].selected_data[0], con['oracle'].selected_data[1],
+            if not con['psql'].insert_data((device, con['oracle'].selected_data[0], con['oracle'].selected_data[1],
                                            con['osm'].selected_data, con['oracle'].selected_data[2],
                                            con['oracle'].selected_data[3], con['tz'].selected_data)):
                 inserted_rows_cnt += 1
@@ -108,6 +107,7 @@ def insert_first_dev_locations(que, con, rows_range):
             break
     logger.info("Max processing time of one device: {}".format(max_time))
     que.put({'finish': (errors_cnt, inserted_rows_cnt, 0)})
+
 
 # Check last location of each device
 def insert_last_dev_locations(que, con, rows_range):
@@ -127,20 +127,21 @@ def insert_last_dev_locations(que, con, rows_range):
             que.put({'error': error})
             return
 
-        # device = [device_id, ]
+        # Select last locations of devices from geo_summary
+        error = con['psql'].select_data(con['mysql'].selected_data)
+
         for device in con['mysql'].selected_data:
             start_time = time.time()
             # con['redis'].selected_data = [device_id, lng, lat, speed, time]
-            if con['redis'].select_data(device[0]):
+            if con['redis'].select_data(device):
                 errors_cnt += 1
                 continue
 
             # Check if the device's location changed
-            if not con['psql'].select_data(device[0]):
-                if (len(con['psql'].selected_data) != 0) \
-                        and (((con['redis'].selected_data[1] == con['psql'].selected_data[0][0])
-                              and (con['redis'].selected_data[2] == con['psql'].selected_data[0][1]))
-                             or (con['redis'].selected_data[4] <= con['psql'].selected_data[0][2])):
+            if (not error) and (device in con['psql'].selected_data):
+                if ((con['redis'].selected_data[1] == con['psql'].selected_data[device][1])
+                        and (con['redis'].selected_data[2] == con['psql'].selected_data[device][2]))\
+                        or (con['redis'].selected_data[4] <= con['psql'].selected_data[device][3]):
                     unchanged_loc_cnt += 1
                     continue
 
@@ -159,7 +160,7 @@ def insert_last_dev_locations(que, con, rows_range):
 
             # Insert new row into geo_summary
             # [device_id, lng, lat, address, speed, last_location_time, timezone_shift]
-            if not con['psql'].insert_data((device[0], con['redis'].selected_data[1], con['redis'].selected_data[2],
+            if not con['psql'].insert_data((device, con['redis'].selected_data[1], con['redis'].selected_data[2],
                                             con['osm'].selected_data, con['redis'].selected_data[3],
                                             con['redis'].selected_data[4], con['tz'].selected_data)):
                 inserted_rows_cnt += 1
@@ -193,6 +194,11 @@ if __name__ == '__main__':
     logger = logging.getLogger("geo_sum_main")
     logger.setLevel('INFO')
 
+    rows_number = 0
+    threads_number = 15
+    chunk_size = 0
+    que = queue.Queue()
+    threads_list = list()
 
     if namespace.first:
         print("Insert first devices' locations.")
@@ -200,13 +206,8 @@ if __name__ == '__main__':
     else:
         print("Insert last devices' locations.")
         logger.info("Insert last devices' locations.")
+        threads_number = 3
     print_progress(0, 100)
-
-    rows_number = 0
-    threads_number = 15
-    chunk_size = 0
-    que = queue.Queue()
-    threads_list = list()
 
     for i in range(threads_number):
         con = init_connections(namespace.c, logger, namespace.first)
@@ -219,7 +220,7 @@ if __name__ == '__main__':
             if error:
                 print("Failed to select data from database. Details are in geo_summary_error.log.")
                 sys.exit(error)
-            rows_number = con['mysql'].selected_data[0][0]
+            rows_number = con['mysql'].selected_data
             chunk_size = rows_number // threads_number
 
         if namespace.first:

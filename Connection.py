@@ -93,9 +93,11 @@ class ConnectionMysql(Connection):
         try:
             if offset != -1:
                 self._cursor.execute(query, (offset, rows_number))
+                rows = self._cursor.fetchall()
+                self.selected_data = [row[0] for row in rows]
             else:
                 self._cursor.execute(query)
-            self.selected_data = self._cursor.fetchall()
+                self.selected_data = self._cursor.fetchall()[0][0]
             return 0
         except Exception as e:
             self._logger.error("Failed to select data from {}. The error occurred: {}.".format(self.dbms, e))
@@ -223,20 +225,22 @@ class ConnectionPostgresql(Connection):
             self._logger.error("Failed to connect to {}. The error occurred: {}.".format(self.dbms, e))
             return -10
 
-    def select_data(self, device_id):
-        query = "SELECT ST_X(last_location) lng, ST_Y(last_location) lat, " \
+    def select_data(self, device_ids):
+        query = "SELECT DISTINCT ON (device_id) device_id, ST_X(last_location) lng, ST_Y(last_location) lat, " \
                 "cast(extract(epoch FROM last_location_time) as bigint) last_location_time " \
-                "FROM {} WHERE device_id={} ORDER BY check_time DESC LIMIT 1;".format(self._table, device_id)
+                "FROM {} WHERE device_id IN ({}) " \
+                "ORDER BY device_id, check_time DESC;".format(self._table, ",".join(map(str, device_ids)))
         try:
             cursor = self._connection.cursor()
             cursor.execute(query)
-            self.selected_data = cursor.fetchall()
+            rows = cursor.fetchall()
+            self.selected_data = dict((row[0], row) for row in rows)
             cursor.close()
             return 0
         except Exception as e:
-            self._logger.error("Device: {}. Failed to select data from {}. The error occurred: {}.".format(device_id,
-                                                                                                           self.dbms,
-                                                                                                           e))
+            self._logger.error("Devices: {}. Failed to select data from {}. The error occurred: {}.".format(device_ids,
+                                                                                                            self.dbms,
+                                                                                                            e))
             self.selected_data = None
             return -11
 
