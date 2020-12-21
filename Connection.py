@@ -11,7 +11,7 @@ import redis
 import requests
 
 # Protobuf structure GPS
-import gps_data_pb2
+import proto_storage_pb2
 
 class Connection(ABC):
     dbms = ""
@@ -246,8 +246,8 @@ class ConnectionPostgresql(Connection):
 
     def insert_data(self, values):
         # values = [device_id, lng, lat, address, speed, last_location_time, timezone_shift]
-        query = "INSERT INTO {} VALUES(DEFAULT, %s, ST_SetSRID(ST_MakePoint(%s, %s),4326), %s, %s, to_timestamp(%s), " \
-                "DEFAULT, %s)".format(self._table)
+        query = "INSERT INTO {} VALUES(DEFAULT, %s, ST_SetSRID(ST_MakePoint(%s, %s),4326), %s, %s, " \
+                "to_timestamp(%s) AT TIME ZONE 'UTC', DEFAULT, %s)".format(self._table)
         try:
             cursor = self._connection.cursor()
             cursor.execute(query, values)
@@ -393,77 +393,45 @@ class ConnectionRedis(Connection):
     def __del__(self):
         self.close_connection()
 
-    def create_connection(self, host=None):
-        if host is None:
-            host = self._host
-            self.close_connection()
-            self._connection = {}
+    def create_connection(self):
+        self.close_connection()
         try:
-            connection = redis.Redis(
-                host=host,
+            self._connection = redis.Redis(
+                host=self._host,
                 port=self._port,
             )
-            self._connection[host] = connection
             return 0
         except Exception as e:
             self._logger.error("Failed to connect to {}. The error occurred: {}.".format(self.dbms, e))
             return -10
 
     def select_data(self, device_id):
-        # Get IP of database where the device last position is stored
-        name = "device:" + str(device_id) + ":connection_info"
+        name = "device:" + str(device_id) + ":info"
         try:
-            redis_ip = self._connection[self._host].hget(name, "redis_ip")
-            if redis_ip is None:
-                self._logger.error("Device: {}. Failed to select database address from {}.".format(device_id,
-                                                                                                   self.dbms))
-                return -13
-        except Exception as e:
-            self._logger.error("Device: {}. Failed to select data from {}. The error occurred: {}.".format(
-                device_id, self.dbms, e))
-            self.selected_data = None
-            return -11
-
-        # Get or create new connection to Redis
-        redis_ip = str(redis_ip, 'utf-8')
-        if not (redis_ip in self._connection):
-            error = self.create_connection(redis_ip)
-            if error:
-                return error
-
-        # Get last position of the device
-        name = "device:" + str(device_id) + ":last_pos"
-        try:
-            data = self._connection[redis_ip].hmget(name, ["data"])
-            if (len(data) != 1) or (data[0] is None):
-                self._logger.error("Device: {}. Failed to select last position of the device "
-                                   "from {}.".format(device_id, self.dbms))
+            ans = self._connection.get(name)
+            if ans is None:
+                self._logger.error("Device: {}. Failed to select data from {}.".format(device_id, self.dbms))
                 return -13
 
-            gps_str = base64.b64decode(data[0].decode("utf-8"))
-            gps = gps_data_pb2.GPS()
-            gps.ParseFromString(gps_str)
+            data_str = base64.b64decode(ans.decode("utf-8"))
+            data = proto_storage_pb2.Data()
+            data.ParseFromString(data_str)
+            pos = data.position
 
-            lng = gps.lon_deg + float("0.{}".format(abs(gps.lon_flt)))
-            lat = gps.lat_deg + float("0.{}".format(abs(gps.lat_flt)))
-            self.selected_data = [device_id, lng, lat, gps.speed, gps.ts]
+            # [device_id, lng, lat, speed, ts]
+            self.selected_data = [device_id, pos.x, pos.y, pos.s, pos.ts]
             return 0
         except Exception as e:
-            self._logger.error("Device: {}. Failed to select data from {}. The error occurred: {}.".format(
-                device_id, self.dbms, e))
+            self._logger.error("Device: {}. Failed to select data from {}. The error occurred: {}.".format(device_id,
+                                                                                                           self.dbms, e))
             self.selected_data = None
             return -11
 
     def close_connection(self):
         self.selected_data = None
         try:
-            for i in self._connection.values():
-                try:
-                    i.ping()
-                    i.close()
-                except Exception:
-                    continue
-            self._connection.clear()
+            self._connection.ping()
+            self._connection.close()
         except Exception:
             return
 

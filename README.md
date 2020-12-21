@@ -75,7 +75,7 @@
 2. SQL-описание таблицы geo_summary: `Geo_summary_table.md`.
 3. Примеры SQL-запросов к таблице geo_summary: `Select_queries.md`.
 4. Пример конфигурационного файла: `config_example.yaml`.
-5. Protobuf-структура данных, получаемых из Redis: `gps_data.proto`.
+5. Protobuf-структура данных, получаемых из Redis: `proto_storage.proto`.
 	
   Генерация класса для работы с данными из Protobuf:
   

@@ -1,0 +1,187 @@
+syntax = "proto2";
+
+package storage;
+
+
+enum ConnectionStatusEnum {
+    ONLINE  = 1;
+    OFFLINE = 2;
+}
+
+enum Gen6Modification
+{
+    X96 = 0;
+    M96 = 1;
+    M66 = 2;
+    A96 = 3;
+    S96 = 4;
+    B96 = 5;
+    E96 = 6;
+    ME96 = 7;
+    X96V2 = 8;
+    M96V2 = 9;
+    M18 = 10;
+    M67 = 11;
+    M36 = 12;
+    M18PRO = 13;
+    M26 = 14;
+    D96 = 15;
+    GSM_GPS_BT = 16;
+    AL66 = 17;
+    M22_96 = 18;
+    M67_96 = 19;
+    AS96v2 = 20;
+    ME96BT = 21;
+    S96V2 = 22;
+    E96BT_GSM_GPS = 23;
+    E96V2 = 24;
+    ME96V2 = 25;
+    E96V2_GSM_GPS = 26;
+    AS97 = 27;
+    S96_MAZDA = 41;
+}
+
+
+message Info {
+    required int64                  device_id    = 1;
+    optional bytes		    alias        = 2;
+    required int32                  type         = 3;
+    optional bytes                  telephone    = 4;
+    optional ConnectionStatusEnum   status       = 5;
+    optional int64                  activity_ts  = 6;
+    optional bytes                  frm_version  = 7;
+    optional bytes                  sn           = 8;
+    optional Gen6Modification       modification = 9;          
+}
+
+message Position {
+    required float x = 1; //Долгота
+    required float y = 2; //Широта
+    required int64 ts = 3; //Метка времени
+    optional int32 s = 4; //Скорость
+    optional int32 dir = 5; //Направление
+    optional int32 sat_qty = 6; //Число спутников
+    optional int32 r = 7; //Точность позиционирования
+    optional float hdop = 8; //HDOP
+    optional float altitude = 9; //Высота над уровнем моря
+    optional bool is_move = 10; //Признак движения
+}
+
+
+message Environment {
+    optional int32 gsm_lvl = 1;
+    optional int32 gps_lvl = 2;
+    optional int32 ctemp = 3;
+    optional int32 etemp = 4;
+    optional int32 mayak_temp = 5;
+    optional float voltage = 6;
+    optional int64 ts = 7;
+}
+
+
+enum BalanceStateEnum {
+    LOW_BALANCE     = 1;
+    NORMAL_BALANCE  = 2;
+}
+
+message Balance {
+    optional int32 value = 1;
+    optional BalanceStateEnum status = 2;
+    optional bytes operator = 3;
+    optional bytes currency = 4;
+    optional int64 ts = 5;
+}
+
+message OBDData {
+    optional int32 fuel_litres = 1;
+    optional int32 fuel_percent = 2;
+    optional int32 mileage = 3;
+    optional int64 ts = 4;
+}
+
+message HoodLock {
+    required    int32       num         = 1;
+    required    bool        channel     = 2;
+    required    bool        status      = 3;
+}
+
+message State {
+    optional bool add_sens_bpass = 1;
+    optional bool alarm = 2;
+    optional bool arm = 3;
+    optional bool arm_auth_wait = 4;
+    optional bool arm_moving_pb = 5;
+    optional bool door = 6;
+    optional bool hbrake = 7;
+    optional bool hfree = 8;
+    optional bool hijack = 9;
+    optional bool hood = 10;
+    optional bool ign = 11;
+    optional bool neutral = 12;
+    optional bool out = 13;
+    optional bool pbrake = 14;
+    optional bool r_start = 15;
+    optional int32 r_start_timer = 16;
+    optional bool run = 17;
+    optional bool shock_bpass = 18;
+    optional bool tilt_bpass = 19;
+    optional bool trunk = 20;
+    optional bool valet = 21;
+    optional bool webasto = 22;
+    optional int32 webasto_timer = 23;
+    optional int64 ts = 24;
+    optional bool dvr = 25;
+    optional bool depr_hlock_channel = 26;
+    optional bool depr_hlock_status = 27;
+    repeated HoodLock hlock = 28;
+}
+
+message AlarmState {
+    optional bool add_h = 1;
+    optional bool add_l = 2;
+    optional bool door = 3;
+    optional bool hbrake = 4;
+    optional bool hijack = 5;
+    optional bool hood = 6;
+    optional bool ign = 7;
+    optional bool out = 8;
+    optional bool pbrake = 9;
+    optional bool shock_h = 10;
+    optional bool shock_l = 11;
+    optional bool tilt = 12;
+    optional bool trunk = 13;
+    optional int64 ts = 14;
+}
+
+message EventData {
+    required int32 event_id = 1;
+    required int32 flag = 2;
+    required int64 ts = 3;
+}
+
+message RStartState {
+    optional bool rstart_timer = 1;
+    optional bool rstart_temp = 2;
+    optional bool rstart_cron = 3;
+    optional int32 wakeup_ts = 4;
+    optional bool rstart_battery = 5;
+}
+
+message Data {
+    required Info info = 1;
+    optional Position position = 2;
+    optional Environment env = 3;
+    optional Balance balance_active = 4;
+    optional Balance balance_standby = 5;
+    optional OBDData obd = 6;
+    optional State state = 7;
+    optional AlarmState alarm = 8;
+    optional EventData last_event_0 = 9;
+    optional EventData last_event_1 = 10;
+    optional EventData last_alarm_0 = 11;
+    optional EventData last_alarm_1 = 12;
+    optional RStartState r_start = 13;
+    optional EventData last_sign_event = 14;
+}
+
+

@@ -175,7 +175,7 @@ def insert_last_dev_locations(que, con, rows_range):
         offset += chunk
         if offset == rows_range[1]:
             break
-        logger.info("Max processing time of one device: {}".format(max_time))
+    logger.info("Max processing time of one device: {}".format(max_time))
     que.put({'finish': (errors_cnt, inserted_rows_cnt, unchanged_loc_cnt)})
 
 
@@ -206,7 +206,6 @@ if __name__ == '__main__':
     else:
         print("Insert last devices' locations.")
         logger.info("Insert last devices' locations.")
-        threads_number = 3
     print_progress(0, 100)
 
     for i in range(threads_number):
