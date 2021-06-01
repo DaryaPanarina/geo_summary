@@ -288,6 +288,7 @@ class ConnectionOSM(Connection):
                 password=self._password,
                 database=self._database
             )
+            self._connection.autocommit = True
             return 0
         except Exception as e:
             self._logger.error("Failed to connect to {}. The error occurred: {}.".format(self.dbms, e))
@@ -295,7 +296,7 @@ class ConnectionOSM(Connection):
 
     def select_data(self, lng, lat):
         # Buildings
-        query = "SELECT postcode, city, street, housenumber, name FROM osm_buildings " \
+        query = "SELECT postcode, city, street, housenumber FROM osm_building_polygon " \
                 "WHERE ST_DWithin(Geography(ST_Transform(ST_Centroid(geometry), 4326)), " \
                 "Geography(ST_SetSRID(ST_Point({}, {}), 4326)), 100) AND street<>'' LIMIT 1;".format(lng, lat)
 
