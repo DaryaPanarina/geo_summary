@@ -297,8 +297,8 @@ class ConnectionOSM(Connection):
     def select_data(self, lng, lat):
         # Buildings
         query = "SELECT postcode, city, street, housenumber FROM osm_building_polygon " \
-                "WHERE ST_DWithin(Geography(ST_Transform(ST_Centroid(geometry), 4326)), " \
-                "Geography(ST_SetSRID(ST_Point({}, {}), 4326)), 100) AND street<>'' LIMIT 1;".format(lng, lat)
+                "WHERE ST_DWithin(ST_Transform(ST_GeomFromEWKT('SRID=4326;POINT({} {})'), 3857), " \
+                "geometry, 100) AND street<>'' LIMIT 1;".format(lng, lat)
 
         error = self.execute_query(query)
         if (not error) and (self.selected_data['city']):
