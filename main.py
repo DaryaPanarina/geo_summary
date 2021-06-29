@@ -74,6 +74,10 @@ def insert_first_dev_locations(que, con, rows_range):
             if con['oracle'].select_data(device):
                 errors_cnt += 1
                 continue
+            if con['oracle'].selected_data[3] > time.time():
+                logger.error("Device: {}. Incorrect timestamp.".format(device))
+                errors_cnt += 1
+                continue
 
             # Define device's timezone
             # args = (lng, lat, ts_utc)
@@ -134,6 +138,10 @@ def insert_last_dev_locations(que, con, rows_range):
             start_time = time.time()
             # con['redis'].selected_data = [device_id, lng, lat, speed, time]
             if con['redis'].select_data(device):
+                errors_cnt += 1
+                continue
+            if con['redis'].selected_data[4] > time.time():
+                logger.error("Device: {}. Incorrect timestamp.".format(device))
                 errors_cnt += 1
                 continue
 
